@@ -1,6 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Icon from '../AppIcon';
+
+import NotificationIndicator from './NotificationIndicator';
+import NotificationCenter from '../../pages/admin-control-panel/components/NotificationCenter';
+import api from '../../api';
 
 const RoleBasedNavigation = ({ userRole = 'traveler', isCollapsed = false, user = null, unreadMessages = 0 }) => {
   const location = useLocation();
@@ -17,6 +21,25 @@ const RoleBasedNavigation = ({ userRole = 'traveler', isCollapsed = false, user 
     navigate('/login-screen');
   };
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Notifications state
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const unreadNotifications = notifications.filter(n => n?.unread).length;
+
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      try {
+        const token = localStorage.getItem('accessToken');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const res = await api.get('/api/dashboard/notifications', { headers });
+        setNotifications(res.data || []);
+      } catch (err) {
+        setNotifications([]);
+      }
+    };
+    fetchNotifications();
+  }, []);
 
   const travelerNavItems = [
     { label: 'Dashboard', path: '/traveler-dashboard', icon: 'LayoutDashboard' },
@@ -95,10 +118,22 @@ const RoleBasedNavigation = ({ userRole = 'traveler', isCollapsed = false, user 
 
             {/* User Menu */}
             <div className="flex items-center space-x-3">
-              <button className="relative p-2 rounded-lg hover:bg-muted transition-smooth">
-                <Icon name="Bell" size={20} />
-                <span className="absolute -top-1 -right-1 bg-accent w-2 h-2 rounded-full"></span>
-              </button>
+              <div className="relative">
+                <NotificationIndicator
+                  count={unreadNotifications}
+                  onClick={() => setShowNotifications((v) => !v)}
+                  className=""
+                  size={20}
+                />
+                {showNotifications && (
+                  <div className="absolute right-0 mt-2 min-w-[340px] z-50">
+                    <NotificationCenter
+                      notifications={notifications}
+                      onMarkAsRead={() => {}}
+                    />
+                  </div>
+                )}
+              </div>
               <div className="group relative flex items-center">
                 <button className="flex items-center space-x-2 p-2 rounded-lg hover:bg-muted transition-smooth" onClick={() => setShowProfile(!showProfile)} title="Profile">
                   <div className="w-8 h-8 bg-secondary rounded-full flex items-center justify-center">
@@ -160,10 +195,22 @@ const RoleBasedNavigation = ({ userRole = 'traveler', isCollapsed = false, user 
               </Link>
 
               <div className="flex items-center space-x-2">
-                <button className="relative p-2 rounded-lg hover:bg-muted transition-smooth">
-                  <Icon name="Bell" size={18} />
-                  <span className="absolute -top-1 -right-1 bg-accent w-2 h-2 rounded-full"></span>
-                </button>
+                <div className="relative">
+                  <NotificationIndicator
+                    count={unreadNotifications}
+                    onClick={() => setShowNotifications((v) => !v)}
+                    className=""
+                    size={18}
+                  />
+                  {showNotifications && (
+                    <div className="absolute right-0 mt-2 min-w-[340px] z-50">
+                      <NotificationCenter
+                        notifications={notifications}
+                        onMarkAsRead={() => {}}
+                      />
+                    </div>
+                  )}
+                </div>
                 <button
                   className="w-8 h-8 bg-secondary rounded-full flex items-center justify-center relative group"
                   onClick={handleLogout}
