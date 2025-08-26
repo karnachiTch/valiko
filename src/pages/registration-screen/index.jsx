@@ -96,20 +96,32 @@ const RegistrationScreen = () => {
     }
   };
 
+
   const handleSubmit = async () => {
     setIsLoading(true);
     setErrors({});
     try {
       // إرسال البيانات إلى FastAPI
-      const res = await api.post('/api/auth/register', {
+      await api.post('/api/auth/register', {
         fullName: formData.fullName,
         email: formData.email,
         password: formData.password,
         role: formData.role
       });
-  // بعد نجاح التسجيل، انتقل مباشرة للوحة التحكم
-  const dashboardRoute = formData?.role === 'traveler' ? '/traveler-dashboard' : '/buyer-dashboard';
-  navigate(dashboardRoute);
+      // تسجيل الدخول تلقائياً بعد نجاح التسجيل
+      const params = new URLSearchParams();
+      params.append('username', formData.email);
+      params.append('password', formData.password);
+      const loginRes = await api.post('/api/auth/login', params, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+      const { access_token, role, email } = loginRes.data;
+      localStorage.setItem('isAuthenticated', 'true');
+      localStorage.setItem('userRole', role);
+      localStorage.setItem('userEmail', email);
+      localStorage.setItem('accessToken', access_token);
+      const dashboardRoute = role === 'traveler' ? '/traveler-dashboard' : (role === 'buyer' ? '/buyer-dashboard' : '/');
+      navigate(dashboardRoute);
     } catch (error) {
       setErrors({ general: error?.response?.data?.detail || 'Registration failed. Please try again.' });
     } finally {
