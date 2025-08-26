@@ -27,62 +27,63 @@ const TravelerDashboard = () => {
   const [notifications, setNotifications] = useState([]);
   const [fulfillingIds, setFulfillingIds] = useState([]);
 
-  useEffect(() => {
-    const fetchAll = async () => {
-      try {
-        const token = localStorage.getItem('accessToken');
-        const headers = { Authorization: `Bearer ${token}` };
-        // بيانات المستخدم
-        const userRes = await api.get('/api/auth/me', { headers });
-        setUser(userRes.data);
-        // الإحصائيات
-        const statsRes = await api.get('/api/dashboard/stats', { headers });
-        console.log('Dashboard stats response:', statsRes.data);
-        console.log('Pending Requests:', statsRes.data.pendingRequests);
-        setDashboardMetrics([
-          { title: 'Active Listings', value: statsRes.data.activeListings, icon: 'Package', trend: 'up', trendValue: '+3', color: 'primary' },
-          { title: 'Pending Requests', value: statsRes.data.pendingRequests, icon: 'MessageCircle', trend: 'up', trendValue: '+2', color: 'warning' },
-          { title: 'Upcoming Trips', value: statsRes.data.upcomingTrips, icon: 'Plane', trend: 'neutral', trendValue: '0', color: 'accent' },
-          { title: 'Total Earnings', value: `$${statsRes.data.totalEarnings}`, icon: 'DollarSign', trend: 'up', trendValue: '+$320', color: 'success' },
-        ]);
-  // العروض النشطة فقط
-  const listingsRes = await api.get('/api/dashboard/active-listings', { headers });
-  setActiveListings(listingsRes.data);
-        // الإشعارات
-        const notifRes = await api.get('/api/dashboard/notifications', { headers });
-        setNotifications(notifRes.data);
-        // recentActivities: يمكن ربطها مع notifications أو endpoint خاص لاحقاً
-        setRecentActivities([]);
-      // الرحلات القادمة
-      const tripsRes = await api.get('/api/dashboard/upcoming-trips', { headers });
-      setUpcomingTrips(tripsRes.data);
-      setDashboardMetrics(prevMetrics => prevMetrics.map(metric =>
-        metric.title === 'Upcoming Trips' ? { ...metric, value: tripsRes.data.length } : metric
-      ));
-      // حساب trendValue للرحلات القادمة
+
+  // دالة fetchAll متاحة للاستخدام في أي مكان
+  const fetchAll = async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const headers = { Authorization: `Bearer ${token}` };
+      // بيانات المستخدم
+      const userRes = await api.get('/api/auth/me', { headers });
+      setUser(userRes.data);
+      // الإحصائيات
+      const statsRes = await api.get('/api/dashboard/stats', { headers });
+  // الرحلات القادمة
+  const tripsRes = await api.get('/api/dashboard/upcoming-trips', { headers });
+  console.log('upcoming trips from backend:', tripsRes.data);
+      // العروض النشطة فقط
+      const listingsRes = await api.get('/api/dashboard/active-listings', { headers });
+      // الإشعارات
+      const notifRes = await api.get('/api/dashboard/notifications', { headers });
+      // recentActivities: يمكن ربطها مع notifications أو endpoint خاص لاحقاً
+      // حساب trendValue للرحلات القادمة فقط (دون تغيير value)
       const previousTripsCount = statsRes.data.previousUpcomingTrips || 0; // إذا كانت متوفرة
       const currentTripsCount = tripsRes.data.length;
       const trendValue = currentTripsCount - previousTripsCount;
-      setDashboardMetrics(prevMetrics => prevMetrics.map(metric =>
-        metric.title === 'Upcoming Trips' ? { ...metric, trendValue: `${trendValue > 0 ? '+' : ''}${trendValue}` } : metric
-      ));
-      } catch (err) {
-        console.error('Dashboard fetch error:', err);
-      }
-    };
+      setUser(userRes.data);
+      setUpcomingTrips(tripsRes.data);
+      setActiveListings(listingsRes.data);
+      setNotifications(notifRes.data);
+      setRecentActivities([]);
+      setDashboardMetrics([
+        { title: 'Active Listings', value: listingsRes.data.length, icon: 'Package', trend: 'up', trendValue: '+3', color: 'primary' },
+        { title: 'Pending Requests', value: statsRes.data.pendingRequests, icon: 'MessageCircle', trend: 'up', trendValue: '+2', color: 'warning' },
+        { title: 'Upcoming Trips', value: tripsRes.data.length, icon: 'Plane', trend: 'neutral', trendValue: `${trendValue > 0 ? '+' : ''}${trendValue}` , color: 'accent' },
+        { title: 'Total Earnings', value: `$${statsRes.data.totalEarnings}`, icon: 'DollarSign', trend: 'up', trendValue: '+$320', color: 'success' }
+      ]);
+    } catch (err) {
+      console.error('Dashboard fetch error:', err);
+    }
+  };
+
+  useEffect(() => {
     fetchAll();
   }, []);
 
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    await fetchAll();
     setIsRefreshing(false);
   };
 
   const handleEditListing = (listingId) => {
     navigate(`/product-listing-creation?edit=${listingId}`);
+  };
+
+  // بعد Fulfill أو تعديل منتج، قم بتحديث البيانات
+  const handleAfterEditOrFulfill = () => {
+    fetchAll();
   };
 
   const handleViewRequests = (listingId) => {
@@ -97,14 +98,13 @@ const TravelerDashboard = () => {
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       // send product id as JSON body
       const res = await api.post('/api/products/mark-fulfilled', { product_id: listingId }, { headers });
-      // update local listing state optimistically
       setActiveListings(prev => (prev || []).map(l => l?.id === listingId ? { ...l, status: 'fulfilled', isActive: false } : l));
-      // optionally refresh notifications or other UI; keep it simple for now
       try { alert(res?.data?.msg || 'Marked as fulfilled'); } catch (e) {}
+      handleAfterEditOrFulfill(); // تحديث البيانات بعد Fulfill
     } catch (err) {
-  console.error('Failed to mark fulfilled', err);
-  const serverMsg = err?.response?.data?.detail || err?.response?.data?.msg || err?.message;
-  try { alert(serverMsg || 'Failed to mark listing as fulfilled'); } catch (e) {}
+      console.error('Failed to mark fulfilled', err);
+      const serverMsg = err?.response?.data?.detail || err?.response?.data?.msg || err?.message;
+      try { alert(serverMsg || 'Failed to mark listing as fulfilled'); } catch (e) {}
     } finally {
       setFulfillingIds(prev => (prev || []).filter(id => id !== listingId));
     }
@@ -229,7 +229,7 @@ const TravelerDashboard = () => {
                 <h2 className="text-lg font-semibold text-foreground mb-4">Upcoming Trips</h2>
                 <div className="grid grid-cols-1 gap-4">
                   {upcomingTrips?.slice(0, 2)?.map((trip) => (
-                    <UpcomingTripCard key={trip?.id} trip={trip} />
+                    <UpcomingTripCard key={`${trip?.id}-${trip?.departureDate || ''}-${trip?.returnDate || ''}`} trip={trip} />
                   ))}
                 </div>
               </div>
@@ -299,7 +299,7 @@ const TravelerDashboard = () => {
               <div className="space-y-4">
                 <h2 className="text-lg font-semibold text-foreground">Upcoming Trips</h2>
                 {upcomingTrips?.map((trip) => (
-                  <UpcomingTripCard key={trip?.id} trip={trip} />
+                  <UpcomingTripCard key={`${trip?.id}-${trip?.departureDate || ''}-${trip?.returnDate || ''}`} trip={trip} />
                 ))}
               </div>
             )}

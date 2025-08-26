@@ -11,13 +11,18 @@ import Icon from '../../components/AppIcon';
 import Button from '../../components/ui/Button';
 import api from '../../api';
 
+import { useLocation } from 'react-router-dom';
 const ProductListingCreation = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [user, setUser] = useState(null);
+  // Detect edit mode from URL
+  const searchParams = new URLSearchParams(location.search);
+  const editId = searchParams.get('edit');
 
   // ✅ تعريف الخطوات (كان ناقص)
   const steps = [
@@ -45,6 +50,43 @@ const ProductListingCreation = () => {
     quantity: 1,
     isActive: true
   });
+
+  // إذا كان هناك editId، اجلب بيانات المنتج واملأ الحقول
+  useEffect(() => {
+    const fetchProductForEdit = async () => {
+      if (!editId) return;
+      setIsLoading(true);
+      try {
+        const token = localStorage.getItem('accessToken');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const res = await api.get(`/api/products/${editId}`, { headers });
+        const p = res.data;
+        setFormData({
+          productName: p.title || '',
+          category: p.category || '',
+          description: p.description || '',
+          images: p.images ? (Array.isArray(p.images) ? p.images : [p.images]) : [],
+          basePrice: p.price ? String(p.price) : '',
+          currency: p.currency || 'USD',
+          departureAirport: p.departureAirport || '',
+          arrivalAirport: p.arrivalAirport || '',
+          travelDates: {
+            departure: p.travelDates?.departure || p.travelDates?.start || '',
+            arrival: p.travelDates?.arrival || p.travelDates?.end || ''
+          },
+          pickupOptions: p.pickupOptions || [],
+          quantity: p.quantity || 1,
+          isActive: typeof p.isActive === 'boolean' ? p.isActive : true
+        });
+      } catch (e) {
+        // إذا فشل الجلب، أبقِ القيم فارغة
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchProductForEdit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId]);
 
   // ✅ Auto-save functionality
   useEffect(() => {
@@ -80,11 +122,35 @@ const ProductListingCreation = () => {
 
   const saveDraft = async () => {
     try {
-      localStorage.setItem('product-listing-draft', JSON.stringify({
-        ...formData,
-        lastSaved: new Date().toISOString()
-      }));
-      setIsDirty(false);
+      if (editId) {
+        // إذا كنا في وضع التعديل، احفظ التعديلات مباشرة في قاعدة البيانات
+        const token = localStorage.getItem('accessToken');
+        const headers = { Authorization: `Bearer ${token}` };
+        const productData = {
+          title: formData.productName,
+          description: formData.description,
+          price: parseFloat(formData.basePrice) || 0,
+          image: formData.images[0] || "",
+          category: formData.category,
+          quantity: formData.quantity,
+          currency: formData.currency,
+          departureAirport: formData.departureAirport,
+          arrivalAirport: formData.arrivalAirport,
+          travelDates: formData.travelDates,
+          pickupOptions: formData.pickupOptions,
+          isActive: formData.isActive
+        };
+        await api.patch(`/api/products/${editId}`, productData, { headers });
+        setIsDirty(false);
+        navigate('/traveler-dashboard', { state: { message: 'Product updated successfully!' } });
+      } else {
+        // إذا كنا في وضع إضافة جديد، احفظ مسودة محلياً
+        localStorage.setItem('product-listing-draft', JSON.stringify({
+          ...formData,
+          lastSaved: new Date().toISOString()
+        }));
+        setIsDirty(false);
+      }
     } catch (error) {
       console.error('Failed to save draft:', error);
     }
@@ -157,11 +223,17 @@ const ProductListingCreation = () => {
         }
       };
 
-      await api.post('/api/products', productData, { headers });
+      if (editId) {
+        // تعديل منتج موجود: أرسل id مع البيانات إلى /api/products
+        await api.post('/api/products', { ...productData, id: editId }, { headers });
+      } else {
+        // إضافة منتج جديد
+        await api.post('/api/products', productData, { headers });
+      }
 
       localStorage.removeItem('product-listing-draft');
       navigate('/traveler-dashboard', { 
-        state: { message: 'Product listing published successfully!' }
+        state: { message: editId ? 'Product updated successfully!' : 'Product listing published successfully!' }
       });
     } catch (error) {
       console.error('Failed to publish listing:', error);

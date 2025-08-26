@@ -2,12 +2,31 @@ import React from 'react';
 import Icon from '../../../components/AppIcon';
 
 const UpcomingTripCard = ({ trip }) => {
-  const formatDate = (date) => {
-    return new Date(date)?.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
+
+  // دالة ذكية لتنسيق أي قيمة تاريخ
+  const formatAnyDate = (date) => {
+    if (!date) return '';
+    // إذا كان رقم (timestamp)
+    if (typeof date === 'number') {
+      const d = new Date(date);
+      if (!isNaN(d)) return d.toLocaleDateString('en-GB');
+    }
+    // إذا كان نص
+    if (typeof date === 'string') {
+      // جرب تحويله مباشرة
+      let d = new Date(date);
+      if (!isNaN(d)) return d.toLocaleDateString('en-GB');
+      // جرب إذا كان فقط تاريخ بدون وقت
+      if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        d = new Date(date + 'T00:00:00Z');
+        if (!isNaN(d)) return d.toLocaleDateString('en-GB');
+      }
+    }
+    // إذا كان Date
+    if (date instanceof Date && !isNaN(date)) {
+      return date.toLocaleDateString('en-GB');
+    }
+    return date;
   };
 
   const getDaysUntilTrip = (departureDate) => {
@@ -42,11 +61,10 @@ const UpcomingTripCard = ({ trip }) => {
         </div>
         
         <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>{formatDate(trip?.departureDate)}</span>
+          <span>{formatAnyDate(trip?.departureDate)}</span>
           <span>→</span>
-          <span>{formatDate(trip?.returnDate)}</span>
+          <span>{formatAnyDate(trip?.returnDate)}</span>
         </div>
-        
         <div className="flex items-center justify-between pt-2 border-t border-border">
           <div className="flex items-center space-x-1">
             <Icon name="Package" size={14} />
