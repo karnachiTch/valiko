@@ -63,9 +63,30 @@ const TravelerDashboard = () => {
       setNotifications(notifRes.data);
       setRecentActivities([]);
       setDashboardMetrics([
-        { title: 'Active Listings', value: listingsRes.data.length, icon: 'Package', trend: 'up', trendValue: '+3', color: 'primary' },
-        { title: 'Pending Requests', value: statsRes.data.pendingRequests, icon: 'MessageCircle', trend: 'up', trendValue: '+2', color: 'warning' },
-        { title: 'Upcoming Trips', value: upcomingTrips?.length || 0, icon: 'Plane', trend: 'neutral', trendValue: `${trendValue > 0 ? '+' : ''}${trendValue}` , color: 'accent' },
+        { 
+          title: 'Active Listings', 
+          value: Array.isArray(listingsRes.data) ? listingsRes.data.filter(l => l?.status === 'active' || l?.isActive).length : 0, // عدد العروض النشطة فعلياً
+          icon: 'Package', 
+          trend: 'up', 
+          trendValue: `+${Array.isArray(listingsRes.data) ? listingsRes.data.filter(l => l?.status === 'active' || l?.isActive).length : 0}`,
+          color: 'primary' 
+        },
+        { 
+          title: 'Pending Requests', 
+          value: Array.isArray(buyerRequests) ? buyerRequests.filter(r => r?.status === 'pending').length : 0, // عدد الطلبات المعلقة الحقيقية
+          icon: 'MessageCircle', 
+          trend: 'up', 
+          trendValue: `+${Array.isArray(buyerRequests) ? buyerRequests.filter(r => r?.status === 'pending').length : 0}`,
+          color: 'warning' 
+        },
+        { 
+          title: 'Upcoming Trips', 
+          value: Array.isArray(upcomingTrips) ? upcomingTrips.length : 0, // عدد الرحلات القادمة الحقيقي من البيانات مباشرة
+          icon: 'Plane', 
+          trend: 'up', 
+          trendValue: `${trendValue > 0 ? '+' : ''}${trendValue}` , 
+          color: 'accent' 
+        },
         { 
           title: 'Total Earnings', 
           value: Number(statsRes.data.totalEarnings || 0).toLocaleString(undefined, {
