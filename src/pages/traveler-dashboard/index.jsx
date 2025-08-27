@@ -26,10 +26,16 @@ const TravelerDashboard = () => {
   const [recentActivities, setRecentActivities] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [fulfillingIds, setFulfillingIds] = useState([]);
+  const [buyerRequests, setBuyerRequests] = useState([]);
 
 
   // دالة fetchAll متاحة للاستخدام في أي مكان
   const fetchAll = async () => {
+  const token = localStorage.getItem('accessToken');
+  const headers = { Authorization: `Bearer ${token}` };
+  // جلب الطلبات الحقيقية
+  const requestsRes = await api.get('/api/requests', { headers });
+  setBuyerRequests(requestsRes.data);
     try {
       const token = localStorage.getItem('accessToken');
       const headers = { Authorization: `Bearer ${token}` };
@@ -37,7 +43,8 @@ const TravelerDashboard = () => {
       const userRes = await api.get('/api/auth/me', { headers });
       setUser(userRes.data);
       // الإحصائيات
-      const statsRes = await api.get('/api/dashboard/stats', { headers });
+  const statsRes = await api.get('/api/dashboard/stats', { headers });
+  console.log('dashboard stats from backend:', statsRes.data);
   // الرحلات القادمة
   const tripsRes = await api.get('/api/dashboard/upcoming-trips', { headers });
   console.log('upcoming trips from backend:', tripsRes.data);
@@ -58,8 +65,19 @@ const TravelerDashboard = () => {
       setDashboardMetrics([
         { title: 'Active Listings', value: listingsRes.data.length, icon: 'Package', trend: 'up', trendValue: '+3', color: 'primary' },
         { title: 'Pending Requests', value: statsRes.data.pendingRequests, icon: 'MessageCircle', trend: 'up', trendValue: '+2', color: 'warning' },
-        { title: 'Upcoming Trips', value: tripsRes.data.length, icon: 'Plane', trend: 'neutral', trendValue: `${trendValue > 0 ? '+' : ''}${trendValue}` , color: 'accent' },
-        { title: 'Total Earnings', value: `$${statsRes.data.totalEarnings}`, icon: 'DollarSign', trend: 'up', trendValue: '+$320', color: 'success' }
+        { title: 'Upcoming Trips', value: upcomingTrips?.length || 0, icon: 'Plane', trend: 'neutral', trendValue: `${trendValue > 0 ? '+' : ''}${trendValue}` , color: 'accent' },
+        { 
+          title: 'Total Earnings', 
+          value: Number(statsRes.data.totalEarnings || 0).toLocaleString(undefined, {
+            style: 'currency',
+            currency: user?.currency || 'USD',
+            minimumFractionDigits: 2
+          }), // عرض الأرباح بصيغة عملة المستخدم
+          icon: 'DollarSign', 
+          trend: 'up', 
+          trendValue: `+${Number(statsRes.data.totalEarnings || 0).toLocaleString(undefined, { style: 'currency', currency: user?.currency || 'USD', minimumFractionDigits: 2 })}`,
+          color: 'success' 
+        }
       ]);
     } catch (err) {
       console.error('Dashboard fetch error:', err);
@@ -307,7 +325,13 @@ const TravelerDashboard = () => {
             {activeTab === 'requests' && (
               <div className="space-y-4">
                 <h2 className="text-lg font-semibold text-foreground">Buyer Requests</h2>
-                {/* يمكنك ربط الطلبات الحقيقية هنا لاحقاً إذا أضفت endpoint خاص بها */}
+                {buyerRequests?.length > 0 ? (
+                  buyerRequests.map((request) => (
+                    <BuyerRequestCard key={request.id} request={request} />
+                  ))
+                ) : (
+                  <div className="text-muted-foreground">No requests found.</div>
+                )}
               </div>
             )}
           </div>
