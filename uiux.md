@@ -78,7 +78,3 @@
 
 ---
 
-**Remarques :**
-- Chaque section peut être personnalisée selon vos besoins.
-- Le design est responsive (ordinateur et mobile).
-- Vous pouvez transformer ce schéma en wireframe graphique avec Figma, Adobe XD ou même sur
