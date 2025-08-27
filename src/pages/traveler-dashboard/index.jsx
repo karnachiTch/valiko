@@ -65,7 +65,7 @@ const TravelerDashboard = () => {
       setDashboardMetrics([
         { 
           title: 'Active Listings', 
-          value: Array.isArray(listingsRes.data) ? listingsRes.data.filter(l => l?.status === 'active' || l?.isActive).length : 0, // عدد العروض النشطة فعلياً
+          value: Array.isArray(listingsRes.data) ? listingsRes.data.filter(l => l?.status === 'active' || l?.isActive).length : 0,
           icon: 'Package', 
           trend: 'up', 
           trendValue: `+${Array.isArray(listingsRes.data) ? listingsRes.data.filter(l => l?.status === 'active' || l?.isActive).length : 0}`,
@@ -73,7 +73,7 @@ const TravelerDashboard = () => {
         },
         { 
           title: 'Pending Requests', 
-          value: Array.isArray(buyerRequests) ? buyerRequests.filter(r => r?.status === 'pending').length : 0, // عدد الطلبات المعلقة الحقيقية
+          value: Array.isArray(buyerRequests) ? buyerRequests.filter(r => r?.status === 'pending').length : 0,
           icon: 'MessageCircle', 
           trend: 'up', 
           trendValue: `+${Array.isArray(buyerRequests) ? buyerRequests.filter(r => r?.status === 'pending').length : 0}`,
@@ -81,9 +81,9 @@ const TravelerDashboard = () => {
         },
         { 
           title: 'Upcoming Trips', 
-          value: Array.isArray(upcomingTrips) ? upcomingTrips.length : 0, // عدد الرحلات القادمة الحقيقي من البيانات مباشرة
+          value: Array.isArray(tripsRes.data) ? tripsRes.data.length : 0, // العدد الحقيقي مباشرة من البيانات القادمة
           icon: 'Plane', 
-          trend: 'up', 
+          trend: 'neutral', 
           trendValue: `${trendValue > 0 ? '+' : ''}${trendValue}` , 
           color: 'accent' 
         },
@@ -93,7 +93,7 @@ const TravelerDashboard = () => {
             style: 'currency',
             currency: user?.currency || 'USD',
             minimumFractionDigits: 2
-          }), // عرض الأرباح بصيغة عملة المستخدم
+          }),
           icon: 'DollarSign', 
           trend: 'up', 
           trendValue: `+${Number(statsRes.data.totalEarnings || 0).toLocaleString(undefined, { style: 'currency', currency: user?.currency || 'USD', minimumFractionDigits: 2 })}`,
