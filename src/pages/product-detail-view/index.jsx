@@ -150,11 +150,22 @@ const ProductDetailView = () => {
 
   const handleRequestProduct = async () => {
     setLoading(true);
-    // Mock API call
-    setTimeout(() => {
+    try {
+      // استخراج معرف المسافر
+      const travelerId = productData?.user_id || productData?.user?.id || productData?.traveler?.id;
+      if (!travelerId) throw new Error('Traveler ID not found');
+      // إرسال الطلب الحقيقي
+      const res = await api.post('/api/requests', {
+        product_id: productData?.id || productData?._id,
+        traveler_id: travelerId,
+        quantity: quantity || 1
+      });
       setLoading(false);
       alert('Product request sent successfully!');
-    }, 2000);
+    } catch (err) {
+      setLoading(false);
+      alert('Failed to send product request: ' + (err?.response?.data?.detail || err.message));
+    }
   };
 
   const handleMessageTraveler = async () => {

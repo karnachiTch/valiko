@@ -1,4 +1,4 @@
-# Schéma UI/UX du project Valikoo
+# Schéma UI/UX du projet Valikoo
 
 ---
 

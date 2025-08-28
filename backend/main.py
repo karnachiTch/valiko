@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI, Depends, HTTPException, Form, Body, Query, WebSocket, WebSocketDisconnect
 from typing import Any
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -11,7 +12,8 @@ import ssl
 import os
 import sendgrid
 from sendgrid.helpers.mail import Mail
-
+from fastapi import APIRouter, Depends, HTTPException, Body
+from bson import ObjectId
 # تعريف التطبيق وإعدادات CORS
 app = FastAPI()
 app.add_middleware(
@@ -51,6 +53,42 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         raise credentials_exception
     return user
 
+# قبول أو رفض الطلب
+from fastapi import Path
+@app.patch("/api/requests/{request_id}/status")
+async def update_request_status(request_id: str = Path(...), status: str = Body(..., embed=True), current_user: dict = Depends(get_current_user)):
+    """
+    تحديث حالة الطلب (accept/decline)
+    status: accepted أو declined
+    """
+    try:
+        from bson import ObjectId
+        if not status or status not in ["accepted", "declined"]:
+            raise HTTPException(status_code=400, detail="Invalid status")
+        traveler_id = str(current_user["_id"])
+        # جرب كل حالات المعرف
+        possible_ids = [request_id]
+        if ObjectId.is_valid(request_id):
+            possible_ids.append(ObjectId(request_id))
+        updated = False
+        for pid in possible_ids:
+            query = {"_id": pid, "traveler_id": traveler_id}
+            print(f"[UPDATE_REQUEST_STATUS] Trying query: {query}")
+            result = await db.requests.update_one(query, {"$set": {"status": status}})
+            print(f"[UPDATE_REQUEST_STATUS] matched={result.matched_count} modified={result.modified_count}")
+            if result.modified_count == 1:
+                updated = True
+                break
+        if updated:
+            return {"ok": True, "status": status}
+        else:
+            raise HTTPException(status_code=404, detail="Request not found or not owned by traveler")
+    except Exception as e:
+        print(f"[UPDATE_REQUEST_STATUS] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 # نقطة نهاية للتحقق من وجود المنتجات
 @app.get("/api/products/check")
 async def check_products():
@@ -72,6 +110,64 @@ async def check_products():
     except Exception as e:
         print(f"[CHECK_PRODUCTS] Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+        # إنشاء طلب جديد
+# إنشاء طلب منتج جديد
+@app.post("/api/requests")
+async def create_request(request: dict = Body(...), current_user: dict = Depends(get_current_user)):
+    try:
+        buyer_id = str(current_user["_id"])
+        product_id = request.get("product_id")
+        traveler_id = request.get("traveler_id")
+        quantity = request.get("quantity", 1)
+        if not product_id or not traveler_id:
+            raise HTTPException(status_code=400, detail="product_id and traveler_id are required")
+        doc = {
+            "product_id": str(product_id),
+            "traveler_id": str(traveler_id),
+            "buyer_id": buyer_id,
+            "quantity": quantity,
+            "status": "pending",
+            "createdAt": datetime.utcnow()
+        }
+        res = await db.requests.insert_one(doc)
+        doc["_id"] = str(res.inserted_id)
+        # إشعار للمسافر (يمكنك إضافة منطق إشعار هنا إذا رغبت)
+        return {"ok": True, "request": doc}
+    except Exception as e:
+        print(f"[CREATE_REQUEST] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+from fastapi import Request
+@app.get("/api/requests")
+async def get_requests(request: Request, current_user: dict = Depends(get_current_user)):
+    traveler_id = str(current_user["_id"])
+    product_id = request.query_params.get("product_id")
+    query = {"traveler_id": traveler_id, "status": "pending"}
+    if product_id:
+        query["product_id"] = product_id
+    requests = []
+    async for req in db.requests.find(query):
+        req["_id"] = str(req.get("_id"))
+        req["product_id"] = str(req.get("product_id", ""))
+        req["buyer_id"] = str(req.get("buyer_id", ""))
+        req["traveler_id"] = str(req.get("traveler_id", ""))
+        # جلب اسم المشتري من قاعدة بيانات المستخدمين
+        buyer = await db.users.find_one({"_id": ObjectId(req["buyer_id"])}) if ObjectId.is_valid(req["buyer_id"]) else None
+        req["buyerName"] = buyer["fullName"] if buyer and "fullName" in buyer else req["buyer_id"]
+        requests.append(req)
+    return requests
+async def get_requests(current_user: dict = Depends(get_current_user)):
+    traveler_id = str(current_user["_id"])
+    requests = []
+    async for req in db.requests.find({"traveler_id": traveler_id}):
+        req["_id"] = str(req.get("_id"))
+        req["product_id"] = str(req.get("product_id", ""))
+        req["buyer_id"] = str(req.get("buyer_id", ""))
+        req["traveler_id"] = str(req.get("traveler_id", ""))
+        # يمكنك إضافة تحويل لأي معرفات أخرى إذا وجدت
+        requests.append(req)
+    return requests
 
 # تغيير حالة المنتج إلى مكتمل
 @app.post("/api/products/mark-fulfilled")
@@ -368,11 +464,17 @@ async def get_product_by_id(product_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+from fastapi import Request
+
 @app.get("/api/requests")
-async def get_requests(current_user: dict = Depends(get_current_user)):
-    """Return recent requests for the authenticated user. Defensive about id shapes and missing collection."""
+async def get_requests(request: Request, current_user: dict = Depends(get_current_user)):
+    """
+    جلب الطلبات حسب المستخدم الحالي أو حسب معرف المنتج إذا تم تمرير product_id
+    """
     try:
         from bson import ObjectId
+        params = dict(request.query_params)
+        product_id = params.get("product_id")
         uid = current_user.get("_id")
         possible_uids = []
         try:
@@ -382,14 +484,20 @@ async def get_requests(current_user: dict = Depends(get_current_user)):
             pass
         possible_uids.append(uid)
 
-        or_clauses = []
-        for pu in possible_uids:
-            or_clauses.append({"buyer_id": pu})
-            or_clauses.append({"user_id": pu})
-            or_clauses.append({"requester_id": pu})
+        query = {}
+        if product_id:
+            # جلب الطلبات الخاصة بمنتج معين لهذا المسافر فقط
+            query = {"product_id": str(product_id), "traveler_id": str(uid)}
+        else:
+            # جلب الطلبات الخاصة بالمستخدم الحالي (buyer أو traveler)
+            or_clauses = []
+            for pu in possible_uids:
+                or_clauses.append({"buyer_id": pu})
+                or_clauses.append({"user_id": pu})
+                or_clauses.append({"requester_id": pu})
+            query = {"$or": or_clauses} if or_clauses else {}
 
-        query = {"$or": or_clauses} if or_clauses else {}
-
+        print(f"[GET_REQUESTS] Final Query: {query}")
         try:
             cursor = db.requests.find(query).sort("createdAt", -1).limit(50)
             docs = await cursor.to_list(length=50)
@@ -423,7 +531,34 @@ async def get_requests(current_user: dict = Depends(get_current_user)):
         return []
 
 # Reuse the existing FastAPI `app` and imports above. (Removed duplicate re-declaration.)
-
+# إنشاء طلب منتج جديد
+@app.post("/api/requests")
+async def create_request(request: dict = Body(...), current_user: dict = Depends(get_current_user)):
+    """
+    ينشئ طلب منتج جديد في db.requests
+    البيانات المطلوبة: product_id, traveler_id, quantity
+    """
+    try:
+        user_id = str(current_user["_id"])
+        product_id = request.get("product_id")
+        traveler_id = request.get("traveler_id")
+        quantity = request.get("quantity", 1)
+        if not product_id or not traveler_id:
+            raise HTTPException(status_code=400, detail="product_id and traveler_id are required")
+        doc = {
+            "product_id": str(product_id),
+            "traveler_id": str(traveler_id),
+            "buyer_id": user_id,
+            "quantity": quantity,
+            "status": "pending",
+            "createdAt": datetime.utcnow()
+        }
+        res = await db.requests.insert_one(doc)
+        doc["_id"] = str(res.inserted_id)
+        return {"ok": True, "request": doc}
+    except Exception as e:
+        print(f"[CREATE_REQUEST] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 @app.get("/api/products")
 async def get_products(
     q: str = None,
@@ -771,7 +906,7 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
             "totalEarnings": total_earnings
         }
     elif role == "buyer":
-        active_requests = await db.products.count_documents({"requests.buyer_id": user_id})
+        active_requests = await db.requests.count_documents({"buyer_id": user_id, "status": "pending"})
         saved_products = await db.saved_items.count_documents({"user_id": user_id})
         completed_purchases = await db.products.count_documents({"buyer_id": user_id, "isSold": True})
         total_spent = 0
@@ -806,6 +941,7 @@ async def get_me(current_user: dict = Depends(get_current_user), token: str = De
     }
 
 
+
 @app.post("/api/products")
 async def create_product(product: dict, current_user: dict = Depends(get_current_user)):
     # استقبل جميع بيانات المنتج كما هي من الواجهة الأمامية
@@ -825,6 +961,22 @@ async def create_product(product: dict, current_user: dict = Depends(get_current
     except Exception as e:
         print('[BROADCAST_PRODUCT_CREATED] failed', e)
     return {"msg": "Product created successfully", "product": product_dict}
+
+# تعديل منتج موجود
+from bson import ObjectId
+@app.patch("/api/products/{product_id}")
+async def update_product(product_id: str, product: dict, current_user: dict = Depends(get_current_user)):
+    user_id = str(current_user["_id"])
+    # إزالة الحقول التي لا يجب تعديلها مباشرة
+    product.pop("_id", None)
+    product.pop("id", None)
+    # بناء update dict
+    update_fields = {k: v for k, v in product.items() if v is not None}
+    result = await db.products.update_one({"_id": ObjectId(product_id), "user_id": user_id}, {"$set": update_fields})
+    if result.modified_count == 1:
+        return {"msg": "Product updated successfully", "id": product_id}
+    else:
+        raise HTTPException(status_code=404, detail="Product not found or not owned by user")
 
 # إشعارات المسافر من قاعدة البيانات
 @app.get("/api/dashboard/notifications")

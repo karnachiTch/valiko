@@ -36,6 +36,14 @@ const TravelerDashboard = () => {
   // جلب الطلبات الحقيقية
   const requestsRes = await api.get('/api/requests', { headers });
   setBuyerRequests(requestsRes.data);
+  // جلب الأنشطة الحقيقية
+  let activitiesRes = { data: [] };
+  try {
+    activitiesRes = await api.get('/api/dashboard/activities', { headers });
+  } catch (err) {
+    activitiesRes = { data: [] };
+  }
+  setRecentActivities(Array.isArray(activitiesRes.data) ? activitiesRes.data : []);
     try {
       const token = localStorage.getItem('accessToken');
       const headers = { Authorization: `Bearer ${token}` };
@@ -61,11 +69,11 @@ const TravelerDashboard = () => {
       setUpcomingTrips(tripsRes.data);
       setActiveListings(listingsRes.data);
       setNotifications(notifRes.data);
-      setRecentActivities([]);
+  // تم جلب الأنشطة الحقيقية أعلاه
       setDashboardMetrics([
         { 
           title: 'Active Listings', 
-          value: Array.isArray(listingsRes.data) ? listingsRes.data.filter(l => l?.status === 'active' || l?.isActive).length : 0, // عدد العروض النشطة فعلياً
+          value: Array.isArray(listingsRes.data) ? listingsRes.data.filter(l => l?.status === 'active' || l?.isActive).length : 0,
           icon: 'Package', 
           trend: 'up', 
           trendValue: `+${Array.isArray(listingsRes.data) ? listingsRes.data.filter(l => l?.status === 'active' || l?.isActive).length : 0}`,
@@ -73,7 +81,7 @@ const TravelerDashboard = () => {
         },
         { 
           title: 'Pending Requests', 
-          value: Array.isArray(buyerRequests) ? buyerRequests.filter(r => r?.status === 'pending').length : 0, // عدد الطلبات المعلقة الحقيقية
+          value: Array.isArray(buyerRequests) ? buyerRequests.filter(r => r?.status === 'pending').length : 0,
           icon: 'MessageCircle', 
           trend: 'up', 
           trendValue: `+${Array.isArray(buyerRequests) ? buyerRequests.filter(r => r?.status === 'pending').length : 0}`,
@@ -81,9 +89,9 @@ const TravelerDashboard = () => {
         },
         { 
           title: 'Upcoming Trips', 
-          value: Array.isArray(upcomingTrips) ? upcomingTrips.length : 0, // عدد الرحلات القادمة الحقيقي من البيانات مباشرة
+          value: Array.isArray(tripsRes.data) ? tripsRes.data.length : 0, // العدد الحقيقي مباشرة من البيانات القادمة
           icon: 'Plane', 
-          trend: 'up', 
+          trend: 'neutral', 
           trendValue: `${trendValue > 0 ? '+' : ''}${trendValue}` , 
           color: 'accent' 
         },
@@ -93,7 +101,7 @@ const TravelerDashboard = () => {
             style: 'currency',
             currency: user?.currency || 'USD',
             minimumFractionDigits: 2
-          }), // عرض الأرباح بصيغة عملة المستخدم
+          }),
           icon: 'DollarSign', 
           trend: 'up', 
           trendValue: `+${Number(statsRes.data.totalEarnings || 0).toLocaleString(undefined, { style: 'currency', currency: user?.currency || 'USD', minimumFractionDigits: 2 })}`,
@@ -277,11 +285,55 @@ const TravelerDashboard = () => {
             {/* Right Sidebar - Activity & Requests */}
             <div className="lg:col-span-3 space-y-6">
               <RecentActivityFeed activities={recentActivities?.slice(0, 5)} />
-              
               <div>
                 <h3 className="font-semibold text-foreground mb-4">Recent Requests</h3>
                 <div className="space-y-4">
-                  {/* يمكنك ربط الطلبات الحقيقية هنا لاحقاً إذا أضفت endpoint خاص بها */}
+                  {buyerRequests?.length > 0 ? (
+                    buyerRequests.slice(0, 5).map((request, idx) => (
+                      <div key={request.id || request._id || idx} className="p-4 border rounded-lg flex flex-col gap-2 bg-muted/40">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-base text-foreground">{request?.buyerName || request?.buyer_id || `Request #${idx + 1}`}</span>
+                          {request?.message && <span className="text-xs text-muted-foreground mb-1">{request.message}</span>}
+                          {request?.quantity && <span className="text-xs text-muted-foreground">الكمية: {request.quantity}</span>}
+                        </div>
+                        <div className="flex flex-row flex-wrap gap-2 justify-end">
+                          <Button size="sm" variant="outline" onClick={() => {
+                            const details = `اسم المشتري: ${request?.buyerName || ''}\n` +
+                              `الكمية: ${request?.quantity || ''}\n` +
+                              (request?.message ? `ملاحظة: ${request.message}\n` : '') +
+                              `رقم الطلب: ${request?.id || request?._id || ''}`;
+                            alert(details);
+                          }}>تفاصيل</Button>
+                          <Button size="sm" variant="success" onClick={async () => {
+                            const requestId = request.id || request._id;
+                            if (!requestId) return alert('Request ID missing');
+                            try {
+                              const token = localStorage.getItem('accessToken');
+                              const headers = token ? { Authorization: `Bearer ${token}` } : {};
+                              await api.patch(`/api/requests/${requestId}/status`, { status: 'accepted' }, { headers });
+                              await fetchAll();
+                            } catch (err) {
+                              alert('فشل قبول الطلب');
+                            }
+                          }}>قبول</Button>
+                          <Button size="sm" variant="error" onClick={async () => {
+                            const requestId = request.id || request._id;
+                            if (!requestId) return alert('Request ID missing');
+                            try {
+                              const token = localStorage.getItem('accessToken');
+                              const headers = token ? { Authorization: `Bearer ${token}` } : {};
+                              await api.patch(`/api/requests/${requestId}/status`, { status: 'declined' }, { headers });
+                              await fetchAll();
+                            } catch (err) {
+                              alert('فشل رفض الطلب');
+                            }
+                          }}>رفض</Button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-muted-foreground">No requests found.</div>
+                  )}
                 </div>
               </div>
             </div>

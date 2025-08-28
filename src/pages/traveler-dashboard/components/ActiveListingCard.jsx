@@ -5,6 +5,25 @@ import Button from '../../../components/ui/Button';
 
 const ActiveListingCard = ({ listing, onEdit, onViewRequests, onMarkFulfilled, isFulfilling }) => {
   const [showRequestsModal, setShowRequestsModal] = useState(false);
+  const [requests, setRequests] = useState([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+
+  // جلب الطلبات الحقيقية لهذا المنتج عند فتح النافذة
+  const fetchRequestsForListing = async () => {
+    setLoadingRequests(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      // جلب الطلبات لهذا المنتج فقط
+      const api = await import('../../../api').then(m => m.default);
+      const res = await api.get(`/api/requests?product_id=${listing?.id}`, { headers });
+      setRequests(res.data || []);
+    } catch (err) {
+      setRequests([]);
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
   const getStatusColor = (status) => {
     switch (status) {
       case 'active':
@@ -72,35 +91,79 @@ const ActiveListingCard = ({ listing, onEdit, onViewRequests, onMarkFulfilled, i
               variant="outline"
               size="sm"
               iconName="Eye"
-              onClick={() => setShowRequestsModal(true)}
+              onClick={() => {
+                setShowRequestsModal(true);
+                fetchRequestsForListing();
+              }}
             >
-              Requests ({listing?.requestCount})
+              Requests ({requests?.length ?? 0})
             </Button>
       {/* نافذة منبثقة لعرض الطلبات */}
       {showRequestsModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-          <div className="bg-card rounded-lg shadow-lg p-6 w-full max-w-md relative">
+          <div className="bg-card rounded-xl shadow-2xl p-6 w-full max-w-lg relative flex flex-col">
             <button
-              className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
+              className="absolute top-3 right-3 text-muted-foreground hover:text-foreground focus:outline-none"
               onClick={() => setShowRequestsModal(false)}
+              aria-label="Close"
             >
-              <Icon name="X" size={20} />
+              <Icon name="X" size={24} />
             </button>
-            <h3 className="text-lg font-semibold mb-4">Requests for {listing?.title}</h3>
-            {/* هنا يتم عرض الطلبات الفعلية إذا كانت متوفرة */}
-            {listing?.requestCount > 0 ? (
-              <ul className="space-y-3">
-                {/* بيانات وهمية للعرض، يمكن ربطها ببيانات حقيقية لاحقاً */}
-                {Array.from({ length: listing?.requestCount }).map((_, idx) => (
-                  <li key={idx} className="p-3 border rounded-lg flex items-center justify-between">
-                    <span>Request #{idx + 1}</span>
-                    <Button size="xs" variant="success">Accept</Button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-muted-foreground">No requests found.</p>
-            )}
+            <h3 className="text-xl font-bold mb-5 text-center">Product requests: {listing?.title}</h3>
+            <div className="overflow-y-auto max-h-[60vh]">
+              {loadingRequests ? (
+                <p className="text-muted-foreground text-center">جاري تحميل الطلبات...</p>
+              ) : requests?.length > 0 ? (
+                <ul className="space-y-4">
+                  {requests.map((req, idx) => (
+                    <li key={req.id || req._id || idx} className="p-4 border rounded-lg flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-muted/40">
+                      <div className="flex-1 min-w-0">
+                        <span className="font-semibold text-base text-foreground block mb-1">{req?.buyerName || req?.buyer_id || `طلب رقم ${idx + 1}`}</span>
+                        {req?.message && <span className="text-xs text-muted-foreground block mb-1">{req.message}</span>}
+                        {req?.quantity && <span className="text-xs text-muted-foreground">الكمية: {req.quantity}</span>}
+                      </div>
+                      <div className="flex flex-row flex-wrap gap-2 justify-end">
+                        <Button size="sm" variant="outline" onClick={() => {
+                          const details = `اسم المشتري: ${req?.buyerName || ''}\n` +
+                            `الكمية: ${req?.quantity || ''}\n` +
+                            (req?.message ? `ملاحظة: ${req.message}\n` : '') +
+                            `رقم الطلب: ${req?.id || req?._id || ''}`;
+                          alert(details);
+                        }}>تفاصيل</Button>
+                        <Button size="sm" variant="success" onClick={async () => {
+                          const requestId = req.id || req._id;
+                          if (!requestId) return alert('Request ID missing');
+                          try {
+                            const token = localStorage.getItem('accessToken');
+                            const headers = token ? { Authorization: `Bearer ${token}` } : {};
+                            const api = await import('../../../api').then(m => m.default);
+                            await api.patch(`/api/requests/${requestId}/status`, { status: 'accepted' }, { headers });
+                            setRequests(prev => prev.filter(r => (r.id || r._id) !== requestId));
+                          } catch (err) {
+                            alert('فشل قبول الطلب');
+                          }
+                        }}>قبول</Button>
+                        <Button size="sm" variant="error" onClick={async () => {
+                          const requestId = req.id || req._id;
+                          if (!requestId) return alert('Request ID missing');
+                          try {
+                            const token = localStorage.getItem('accessToken');
+                            const headers = token ? { Authorization: `Bearer ${token}` } : {};
+                            const api = await import('../../../api').then(m => m.default);
+                            await api.patch(`/api/requests/${requestId}/status`, { status: 'declined' }, { headers });
+                            setRequests(prev => prev.filter(r => (r.id || r._id) !== requestId));
+                          } catch (err) {
+                            alert('فشل رفض الطلب');
+                          }
+                        }}>رفض</Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-muted-foreground text-center">no requests at the moment</p>
+              )}
+            </div>
           </div>
         </div>
       )}
