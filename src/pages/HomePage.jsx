@@ -178,8 +178,15 @@ export default function HomePage() {
   // initialize displayedProducts when products are loaded
   useEffect(() => {
     setPageIndex(1);
-    setDisplayedProducts(Array.isArray(products) ? products.slice(0, itemsPerPage) : []);
-  }, [products, itemsPerPage]);
+    // اختيار 3 منتجات عشوائية في كل تحميل للصفحة
+    if (Array.isArray(products) && products.length > 0) {
+      // انسخ المصفوفة ثم اخلطها
+      const shuffled = [...products].sort(() => 0.5 - Math.random());
+      setDisplayedProducts(shuffled.slice(0, 3));
+    } else {
+      setDisplayedProducts([]);
+    }
+  }, [products]);
 
   // load more function (appends next page)
   const loadMore = () => {
@@ -215,7 +222,7 @@ export default function HomePage() {
 
   return (
     <div className="font-sans">
-      /* Header */
+      {/* Header */}
       <header className="flex justify-between items-center px-6 py-4 shadow-sm font-bold fixed top-0 left-0 w-full bg-white z-50">
         <h1 className="text-2xl font-bold">Valikoo</h1>
         <nav className="flex space-x-6 text-xl">
@@ -282,8 +289,8 @@ export default function HomePage() {
     className="px-4 flex flex-row flex-nowrap overflow-x-auto gap-2 gap-y-2 md:grid md:grid-cols-3 md:gap-3 md:gap-y-3 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 pb-4 md:pb-0 relative snap-x snap-mandatory scroll-smooth"
     style={{ WebkitOverflowScrolling: 'touch' }}
   >
-  {((typeof window !== 'undefined' && window.innerWidth < 768) ? displayedProducts : products)?.length > 0 ? (
-      ((typeof window !== 'undefined' && window.innerWidth < 768) ? displayedProducts : products).map((order, i) => {
+  {displayedProducts?.length > 0 ? (
+      displayedProducts.map((order, i) => {
         const id = order.id || order._id || i;
         return (
         <div
@@ -405,17 +412,16 @@ export default function HomePage() {
       </div>
     )}
     {/* Scroll Indicator (mobile only) */}
-  <div className="md:hidden w-full absolute left-0 -bottom-2 flex justify-center pointer-events-none">
+    <div className="md:hidden w-full absolute left-0 -bottom-2 flex justify-center pointer-events-none">
       <div className="h-2 w-24 bg-gray-300 rounded-full opacity-70 animate-pulse" />
     </div>
-    
   </div>
-    {/* Mobile loading indicator */}
-    {typeof window !== 'undefined' && window.innerWidth < 768 && isLoadingMore && (
-      <div className="w-full flex justify-center mt-2">
-        <div className="px-3 py-1 text-sm text-muted-foreground bg-gray-100 rounded">Loading more...</div>
-      </div>
-    )}
+  {/* Mobile loading indicator */}
+  {typeof window !== 'undefined' && window.innerWidth < 768 && isLoadingMore && (
+    <div className="w-full flex justify-center mt-2">
+      <div className="px-3 py-1 text-sm text-muted-foreground bg-gray-100 rounded">Loading more...</div>
+    </div>
+  )}
 </section>
 
 
