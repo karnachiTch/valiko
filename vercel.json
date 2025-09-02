@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://valiko.vercel.app/api/$1"
+    }
+  ]
+}
