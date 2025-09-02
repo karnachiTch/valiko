@@ -1,13 +1,7 @@
 // نقطة موحدة لطلبات API
 import axios from 'axios';
 
-// استخدم عنوان API production تلقائياً عند العمل على Vercel
-const isVercel = typeof window !== 'undefined' && window.location.hostname.endsWith('vercel.app');
-const productionApiBase = 'https://api.valiko.vercel.app'; // غيّر هذا إذا كان لديك دومين آخر للـ backend
-const resolvedBase =
-  (typeof process !== 'undefined' && process?.env?.VITE_API_BASE)
-  || localStorage.getItem('API_BASE')
-  || (isVercel ? productionApiBase : 'http://localhost:8000');
+const resolvedBase = (typeof process !== 'undefined' && process?.env?.VITE_API_BASE) || localStorage.getItem('API_BASE') || 'http://localhost:8000';
 const api = axios.create({
   baseURL: resolvedBase, // FastAPI backend (configurable via VITE_API_BASE or localStorage.API_BASE)
 });
