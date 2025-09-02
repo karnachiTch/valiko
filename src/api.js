@@ -1,35 +1,9 @@
 // نقطة موحدة لطلبات API
 import axios from 'axios';
 
-// Resolve API base URL:
-// - If VITE_API_BASE is provided at build time (recommended for separated backend), use it.
-// - Else if localStorage.API_BASE is present (dev override), use it.
-// - Else: in dev builds use localhost:8000, in production default to relative URLs (empty) so requests go to same origin.
-let resolvedBase = '';
-// Safely read Vite-provided env at build time (may throw in non-bundled contexts)
-try {
-  const viteBase = import.meta?.env?.VITE_API_BASE || null;
-  if (viteBase) resolvedBase = viteBase;
-} catch (e) {
-  // ignore (import.meta may not be available in some tooling/analysis)
-}
-try {
-  if (!resolvedBase && typeof window !== 'undefined') {
-    const stored = localStorage.getItem('API_BASE');
-    if (stored) resolvedBase = stored;
-  }
-} catch (e) {}
-if (!resolvedBase) {
-  try {
-    const isDev = !!(import.meta?.env?.DEV);
-    resolvedBase = isDev ? 'http://localhost:8000' : '';
-  } catch (e) {
-    resolvedBase = '';
-  }
-}
-
+const resolvedBase = (typeof process !== 'undefined' && process?.env?.VITE_API_BASE) || localStorage.getItem('API_BASE') || 'http://localhost:8000';
 const api = axios.create({
-  baseURL: resolvedBase, // FastAPI backend (configurable via VITE_API_BASE or localStorage.API_BASE). Empty => relative paths.
+  baseURL: resolvedBase, // FastAPI backend (configurable via VITE_API_BASE or localStorage.API_BASE)
 });
 
 // Safety: ensure axios does not set a default Content-Type globally.
