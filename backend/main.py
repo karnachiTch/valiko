@@ -186,22 +186,6 @@ async def get_requests(current_user: dict = Depends(get_current_user)):
         requests.append(req)
     return requests
 
-
-@app.get("/api/utils/geolocate")
-async def api_geolocate(ip: str | None = None):
-    """Utility route: /api/utils/geolocate?ip=1.2.3.4
-    If ip is not provided returns 400. Calls AbstractAPI using `backend/ip_geolocation.py`.
-    """
-    if not ip:
-        raise HTTPException(status_code=400, detail="ip query parameter is required")
-    try:
-        from .ip_geolocation import geolocate
-    except Exception:
-        # relative import fallback for direct-run mode
-        from ip_geolocation import geolocate
-    result = await geolocate(ip)
-    return result
-
 # تغيير حالة المنتج إلى مكتمل
 @app.post("/api/products/mark-fulfilled")
 async def mark_product_fulfilled(payload: Any = Body(...), current_user: dict = Depends(get_current_user)):
