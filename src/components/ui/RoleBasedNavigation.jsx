@@ -11,14 +11,31 @@ const RoleBasedNavigation = ({ userRole = 'traveler', isCollapsed = false, user 
   const navigate = useNavigate();
   // determine effective role: prefer explicit user.role, then localStorage, then prop
   const effectiveRole = (user && user.role) || localStorage.getItem('userRole') || userRole;
+  // derive a displayUser: prefer prop `user`, else try to read a stored `user` JSON from localStorage
+  let storedUser = null;
+  try {
+    const raw = typeof window !== 'undefined' && localStorage.getItem('user');
+    storedUser = raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    storedUser = null;
+  }
+  const displayUser = user || storedUser;
   // Logout handler
   const handleLogout = () => {
+    // Clear all local/session storage related to auth
     localStorage.removeItem('isAuthenticated');
     localStorage.removeItem('userRole');
     localStorage.removeItem('userEmail');
     localStorage.removeItem('rememberMe');
     localStorage.removeItem('socialLogin');
-    navigate('/login-screen');
+    localStorage.removeItem('accessToken');
+    // If you store any other keys, clear them here
+    sessionStorage.clear();
+    // Optionally clear all localStorage (uncomment if you want to remove everything)
+    // localStorage.clear();
+  navigate('/');
+    // Force reload to clear any cached state
+    window.location.reload();
   };
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -140,21 +157,22 @@ const RoleBasedNavigation = ({ userRole = 'traveler', isCollapsed = false, user 
                     <Icon name="User" size={16} color="white" />
                   </div>
                 </button>
-                {showProfile && user && (
+                {showProfile && displayUser && (
                   <div className="absolute right-0 top-12 min-w-[220px] bg-card border border-border rounded-lg shadow-lg z-50 p-4">
                     <div className="flex flex-col items-center space-y-2">
                       <div className="w-12 h-12 bg-secondary rounded-full flex items-center justify-center">
                         <Icon name="User" size={24} color="white" />
                       </div>
-                      <div className="text-lg font-bold">{user.fullName}</div>
-                      <div className="text-sm text-muted-foreground">{user.email}</div>
-                      <div className="text-xs text-accent">{user.role}</div>
+                      <div className="text-lg font-bold">{displayUser.fullName}</div>
+                      <div className="text-sm text-muted-foreground">{displayUser.email}</div>
+                      <div className="text-xs text-accent">{displayUser.role}</div>
                     </div>
                     <div className="mt-4">
                       <button
                         onClick={() => {
                           setShowProfile(false);
-                          if (userRole === 'traveler') {
+                          // use effectiveRole (derived from prop/user/localStorage) to decide target
+                          if (effectiveRole === 'traveler') {
                             navigate('/traveler-profile-management');
                           } else {
                             navigate('/buyer-profile-management');

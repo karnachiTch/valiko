@@ -55,9 +55,9 @@ const FilterChips = ({ filters, onRemove, onShowAdvancedFilters }) => {
   const totalActiveFilters = filterChips?.length || 0;
 
   return (
-    <div className="bg-background border-b border-border">
+    <div className="bg-white rounded-2xl shadow-md border border-gray-100 mb-6">
       <div className="px-4 py-3">
-        <div className="flex items-center space-x-2 overflow-x-auto scrollbar-hide">
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
           {/* Advanced Filters Button */}
           <button
             onClick={onShowAdvancedFilters}

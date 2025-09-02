@@ -162,45 +162,59 @@ const ProductSearchAndBrowse = () => {
   };
     
       return (
-        <div>
-    <RoleBasedNavigation user={user} userRole={userRole} />
-          <SearchHeader
-            searchQuery={searchQuery}
-            onSearchChange={handleSearchChange}
-            onVoiceSearch={handleVoiceSearch}
-          />
-          <FilterChips filters={filters} onRemove={handleFilterRemove} />
-          <AdvancedFiltersPanel
-            show={showAdvancedFilters}
-            filters={filters}
-            onApply={handleApplyFilters}
-            onReset={handleResetFilters}
-            onClose={() => setShowAdvancedFilters(false)}
-          />
-          <SortAndResults
-            currentSort={currentSort}
-            setCurrentSort={setCurrentSort}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-            loading={loading}
-            hasMore={hasMore}
-            products={products}
-          />
-          {/* تخطيط شبكي: الفلاتر يسار، المنتجات يمين */}
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mt-6">
-            <div className="lg:col-span-1">
-              <DesktopFilterSidebar
-                filters={filters}
-                onApply={handleApplyFilters}
-                onReset={handleResetFilters}
-              />
+        <div className="min-h-screen bg-gray-50 font-sans">
+          {/* شريط علوي ثابت */}
+          <div className="fixed top-0 left-0 w-full z-50 shadow-sm bg-white">
+            <RoleBasedNavigation user={user} userRole={userRole} />
+          </div>
+          {/* محتوى الصفحة */}
+          <div className="pt-20 max-w-7xl mx-auto px-4">
+            {/* شريط البحث */}
+            <div className="mb-6">
+              <div className="rounded-2xl shadow-md bg-white p-4">
+                <SearchHeader
+                  searchQuery={searchQuery}
+                  onSearchChange={handleSearchChange}
+                  onVoiceSearch={handleVoiceSearch}
+                />
+              </div>
             </div>
-            <div className="lg:col-span-3">
-              {viewMode === 'grid' ? (
-                <ProductGrid products={products} viewMode={viewMode} loading={loading} />
-              ) : (
-                <ProductList products={products} loading={loading} />
-              )}
+            {/* شرائح الفلاتر */}
+            <FilterChips filters={filters} onRemove={handleFilterRemove} />
+            {/* نافذة الفلاتر المتقدمة */}
+            <AdvancedFiltersPanel
+              show={showAdvancedFilters}
+              filters={filters}
+              onApply={handleApplyFilters}
+              onReset={handleResetFilters}
+              onClose={() => setShowAdvancedFilters(false)}
+            />
+            {/* شريط الفرز وعدد النتائج */}
+            <SortAndResults
+              currentSort={currentSort}
+              setCurrentSort={setCurrentSort}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              loading={loading}
+              hasMore={hasMore}
+              products={products}
+            />
+            {/* تخطيط شبكي: الفلاتر يسار، المنتجات يمين */}
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mt-6">
+              <div className="lg:col-span-3 order-2 lg:order-1">
+                {viewMode === 'grid' ? (
+                  <ProductGrid products={products} viewMode={viewMode} loading={loading} />
+                ) : (
+                  <ProductList products={products} loading={loading} />
+                )}
+              </div>
+              <div className="lg:col-span-1 order-1 lg:order-2">
+                <DesktopFilterSidebar
+                  filters={filters}
+                  onApply={handleApplyFilters}
+                  onReset={handleResetFilters}
+                />
+              </div>
             </div>
           </div>
         </div>

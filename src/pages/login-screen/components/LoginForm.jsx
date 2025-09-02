@@ -54,14 +54,17 @@ const LoginForm = () => {
       const params = new URLSearchParams();
       params.append('username', formData.email);
       params.append('password', formData.password);
-      const res = await api.post('/api/auth/login', params, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      });
-      const { access_token, role, email } = res.data;
+      params.append('remember_me', formData.rememberMe ? 'true' : 'false');
+  console.debug('login: posting to', api.defaults.baseURL + '/api/auth/login', params.toString());
+  const res = await api.post('/api/auth/login', params);
+    const { access_token, role, email, fullName, user } = res.data;
+    // prefer explicit user object from response, else build one from returned fields
+    const userObj = user || { fullName: fullName || '', email: email || '', role: role || '' };
   localStorage.setItem('isAuthenticated', 'true');
-  localStorage.setItem('userRole', role);
-  localStorage.setItem('userEmail', email);
+  localStorage.setItem('userRole', role || userObj.role);
+  localStorage.setItem('userEmail', email || userObj.email);
   localStorage.setItem('accessToken', access_token);
+  try { localStorage.setItem('user', JSON.stringify(userObj)); } catch (e) {}
       if (formData?.rememberMe) {
         localStorage.setItem('rememberMe', 'true');
       }
@@ -90,14 +93,16 @@ const LoginForm = () => {
       const params = new URLSearchParams();
       params.append('username', email);
       params.append('password', password);
-      const res = await api.post('/api/auth/login', params, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      });
-      const { access_token, role, email: userEmail } = res.data;
-      localStorage.setItem('isAuthenticated', 'true');
-      localStorage.setItem('userRole', role);
-      localStorage.setItem('userEmail', userEmail);
-      localStorage.setItem('accessToken', access_token);
+      params.append('remember_me', remember ? 'true' : 'false');
+  console.debug('performLogin: posting to', api.defaults.baseURL + '/api/auth/login', params.toString());
+  const res = await api.post('/api/auth/login', params);
+  const { access_token, role, email: userEmail, fullName, user } = res.data;
+  const userObj = user || { fullName: fullName || '', email: userEmail || '', role: role || '' };
+  localStorage.setItem('isAuthenticated', 'true');
+  localStorage.setItem('userRole', role || userObj.role);
+  localStorage.setItem('userEmail', userEmail || userObj.email);
+  localStorage.setItem('accessToken', access_token);
+  try { localStorage.setItem('user', JSON.stringify(userObj)); } catch (e) {}
       if (remember) localStorage.setItem('rememberMe', 'true');
 
       if (role === 'traveler') {
@@ -207,7 +212,7 @@ const LoginForm = () => {
             onClick={() => performLogin('karnachenih@gmail.com', 'Loai4218#', true)}
             fullWidth
           >
-            Quick Login: karnachnih@gmail.com
+            Quick Login: karnachenih@gmail.com
           </Button>
           <Button
             variant="secondary"

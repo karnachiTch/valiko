@@ -80,19 +80,20 @@ const ProductGrid = ({ products, loading, onLoadMore = () => {}, hasMore }) => {
   }
 
   return (
-    <div className="space-y-6">
+    <>
       {/* Products Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 py-4 px-1">
         {products?.map((product) => (
-          <ProductCard
-            key={product?.id}
-            product={{
-              ...product,
-              isSaved: savedProducts?.has(product?.id)
-            }}
-            onSave={handleSaveProduct}
-            onRequest={handleRequestProduct}
-          />
+          <div key={product?.id} className="h-full w-full flex">
+            <ProductCard
+              product={{
+                ...product,
+                isSaved: savedProducts?.has(product?.id)
+              }}
+              onSave={handleSaveProduct}
+              onRequest={handleRequestProduct}
+            />
+          </div>
         ))}
 
         {/* Loading Skeletons */}
@@ -125,7 +126,7 @@ const ProductGrid = ({ products, loading, onLoadMore = () => {}, hasMore }) => {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };
 

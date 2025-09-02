@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import AppImage from '../../../components/AppImage';
 import Icon from '../../../components/AppIcon';
+import api from '../../../api';
 
 const ConversationList = ({ conversations, activeConversation, onConversationSelect }) => {
   const getStatusIcon = (status) => {
@@ -54,7 +55,70 @@ const ConversationList = ({ conversations, activeConversation, onConversationSel
     }
   };
 
-  if (!conversations || conversations?.length === 0) {
+  const [localConversations, setLocalConversations] = useState(conversations || []);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  // keep local state in sync if parent passes conversations
+  useEffect(() => {
+    setLocalConversations(conversations || []);
+  }, [conversations]);
+
+  useEffect(() => {
+    console.debug('[ConversationList] localConversations updated, length=', localConversations?.length);
+  }, [localConversations]);
+
+  // fetch conversations when not provided by parent
+  useEffect(() => {
+    let mounted = true;
+    const fetchConversations = async () => {
+      // if parent passes the `conversations` prop (even an empty array), do not fetch here
+      if (typeof conversations !== 'undefined') return;
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await api.get('/api/messages/conversations');
+        if (!mounted) return;
+        setLocalConversations(res.data || []);
+      } catch (err) {
+        console.error('[ConversationList] failed to load conversations', err);
+        if (!mounted) return;
+        setError(err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    fetchConversations();
+    return () => { mounted = false; };
+  }, []); // run once on mount
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-8">
+        <div className="text-center">
+          <Icon name="Loader" size={36} className="animate-spin text-muted-foreground mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading conversations…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-8">
+        <div className="text-center">
+          <Icon name="AlertTriangle" size={36} className="text-warning mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-foreground mb-2">Failed to load conversations</h3>
+          <p className="text-muted-foreground text-sm">Please check your connection or try again later.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // display conversations as provided by parent or fetched from server
+  const displayConversations = localConversations || [];
+
+  if (!displayConversations || displayConversations.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="text-center">
@@ -70,7 +134,7 @@ const ConversationList = ({ conversations, activeConversation, onConversationSel
 
   return (
     <div className="flex-1 overflow-y-auto">
-      {conversations?.map((conversation) => {
+  {displayConversations?.map((conversation) => {
         const statusInfo = getStatusIcon(getField(conversation, 'status', 'state'));
         const convId = idOf(getField(conversation, 'id', '_id', 'conversationId', 'conversation_id'));
         const activeId = idOf(getField(activeConversation, 'id', '_id', 'conversationId', 'conversation_id'));
@@ -80,7 +144,12 @@ const ConversationList = ({ conversations, activeConversation, onConversationSel
         const participantAvatar = getField(conversation, 'participantAvatar', 'participant_avatar', 'participantImage', 'participant') || conversation?.participantAvatar;
         const productTitle = getField(conversation, 'productTitle', 'product_title', 'title') || '';
         const productImage = getField(conversation, 'productImage', 'product_image', 'productImageUrl') || conversation?.productImage;
-        const lastMessage = getField(conversation, 'lastMessage', 'last_message', 'message', 'last_message_text') || '';
+  // normalize lastMessage: backend may return object { content } or string
+  const lastMessageRaw = getField(conversation, 'lastMessage', 'last_message', 'message', 'last_message_text');
+  let lastMessage = '';
+  if (typeof lastMessageRaw === 'string') lastMessage = lastMessageRaw;
+  else if (lastMessageRaw && typeof lastMessageRaw === 'object') lastMessage = lastMessageRaw.content || lastMessageRaw.message || String(lastMessageRaw) || '';
+  else lastMessage = '';
         const lastMessageTime = getField(conversation, 'lastMessageTime', 'last_message_time', 'updatedAt', 'createdAt');
         const unread = getField(conversation, 'unreadCount', 'unread_count', 'unread') || 0;
 

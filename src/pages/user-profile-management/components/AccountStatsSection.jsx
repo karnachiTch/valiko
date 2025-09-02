@@ -8,9 +8,13 @@ const AccountStatsSection = ({ userRole }) => {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const res = await api.get(`/api/stats?role=${userRole}`);
-        setStats(res.data.stats || []);
-        setRecentActivity(res.data.recentActivity || []);
+  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  // backend exposes dashboard stats at /api/dashboard/stats
+  const res = await api.get('/api/dashboard/stats', { headers });
+  console.debug('[AccountStatsSection] dashboard stats response:', res.data);
+  setStats(res.data.stats || res.data?.stats || []);
+  setRecentActivity(res.data.recentActivity || res.data?.recentActivity || []);
       } catch (err) {
         console.error('Failed to fetch account stats:', err);
       }

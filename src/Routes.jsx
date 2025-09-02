@@ -3,6 +3,7 @@ import { BrowserRouter, Routes as RouterRoutes, Route } from "react-router-dom";
 import ScrollToTop from "components/ScrollToTop";
 import ErrorBoundary from "components/ErrorBoundary";
 import NotFound from "pages/NotFound";
+import HomePage from './pages/HomePage';
 import TravelerDashboard from './pages/traveler-dashboard';
 import BuyerDashboard from './pages/buyer-dashboard';
 import ProductSearchAndBrowse from './pages/product-search-and-browse';
@@ -51,7 +52,7 @@ const Routes = () => {
       <ScrollToTop />
       <RouterRoutes>
         {/* Define your route here */}
-        <Route path="/" element={<LoginScreen />} />
+        <Route path="/" element={<HomePage />} />
         <Route path="/login-screen" element={<LoginScreen />} />
         <Route path="/registration-screen" element={<RegistrationScreen />} />
         <Route path="/traveler-dashboard" element={
@@ -74,11 +75,7 @@ const Routes = () => {
             <ProductListingCreation />
           </ProtectedRoute>
         } />
-  <Route path="/product-detail-view/:id" element={
-    <ProtectedRoute>
-      <ProductDetailView />
-    </ProtectedRoute>
-  } />
+  <Route path="/product-detail-view/:id" element={<ProductDetailView />} />
         <Route path="/messaging-system" element={<MessagingSystem />} />
         <Route path="/saved-items" element={
           <ProtectedRoute allowedRoles={['buyer']}>

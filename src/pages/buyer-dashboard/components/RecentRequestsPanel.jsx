@@ -15,7 +15,24 @@ const RecentRequestsPanel = () => {
         const res = await api.get('/api/requests');
         if (!mounted) return;
         const items = Array.isArray(res.data) ? res.data : (res.data?.requests || []);
-        setRequests(items);
+
+        // Batch fetch missing product names to avoid N requests
+        const toLookup = items.filter(it => !(it.productName && it.productName.length) && it.productId).map(it => it.productId);
+        if (toLookup.length > 0) {
+          try {
+            const idsParam = encodeURIComponent(toLookup.join(','));
+            const batchRes = await api.get(`/api/products/batch?ids=${idsParam}`);
+            const lookupMap = {};
+            (Array.isArray(batchRes.data) ? batchRes.data : []).forEach(p => { if (p && p.id) lookupMap[p.id] = p.name; });
+            const filled = items.map(it => ({ ...it, productName: it.productName && it.productName.length ? it.productName : (lookupMap[it.productId] || it.productName || '') }));
+            setRequests(filled);
+          } catch (e) {
+            console.error('[RecentRequestsPanel] batch lookup failed', e);
+            setRequests(items);
+          }
+        } else {
+          setRequests(items);
+        }
       } catch (e) {
         console.error('[RecentRequestsPanel] fetch error', e);
         setRequests([]);

@@ -31,11 +31,19 @@ const TravelerDashboard = () => {
 
   // دالة fetchAll متاحة للاستخدام في أي مكان
   const fetchAll = async () => {
-  const token = localStorage.getItem('accessToken');
-  const headers = { Authorization: `Bearer ${token}` };
-  // جلب الطلبات الحقيقية
-  const requestsRes = await api.get('/api/requests', { headers });
-  setBuyerRequests(requestsRes.data);
+    const token = localStorage.getItem('accessToken');
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    // جلب الطلبات الحقيقية (محمي - إذا فشل الطلب لا نرمي الخطأ ونستمر)
+    let fetchedBuyerRequests = [];
+    try {
+      const requestsRes = await api.get('/api/requests', { headers });
+      fetchedBuyerRequests = Array.isArray(requestsRes.data) ? requestsRes.data : (requestsRes.data?.requests || []);
+      setBuyerRequests(fetchedBuyerRequests);
+    } catch (err) {
+      console.warn('Failed to fetch requests in dashboard:', err?.response?.data || err.message || err);
+      fetchedBuyerRequests = [];
+      setBuyerRequests([]);
+    }
   // جلب الأنشطة الحقيقية
   let activitiesRes = { data: [] };
   try {
@@ -81,10 +89,11 @@ const TravelerDashboard = () => {
         },
         { 
           title: 'Pending Requests', 
-          value: Array.isArray(buyerRequests) ? buyerRequests.filter(r => r?.status === 'pending').length : 0,
+          // use the freshly fetched requests list so the metric updates immediately
+          value: Array.isArray(fetchedBuyerRequests) ? fetchedBuyerRequests.filter(r => r?.status === 'pending').length : 0,
           icon: 'MessageCircle', 
           trend: 'up', 
-          trendValue: `+${Array.isArray(buyerRequests) ? buyerRequests.filter(r => r?.status === 'pending').length : 0}`,
+          trendValue: `+${Array.isArray(fetchedBuyerRequests) ? fetchedBuyerRequests.filter(r => r?.status === 'pending').length : 0}`,
           color: 'warning' 
         },
         { 
@@ -332,7 +341,15 @@ const TravelerDashboard = () => {
                       </div>
                     ))
                   ) : (
-                    <div className="text-muted-foreground">No requests found.</div>
+                    <div className="text-muted-foreground">
+                      No requests found.
+                      <div className="mt-2 text-xs text-muted-foreground">Debug:</div>
+                      <div className="mt-1 text-xs text-muted-foreground">Token present: {localStorage.getItem('accessToken') ? 'yes' : 'no'}</div>
+                      <details className="mt-2 text-xs text-muted-foreground p-2 bg-muted/20 rounded">
+                        <summary className="cursor-pointer">Show buyerRequests (raw)</summary>
+                        <pre className="text-xs mt-2 whitespace-pre-wrap">{JSON.stringify(buyerRequests, null, 2)}</pre>
+                      </details>
+                    </div>
                   )}
                 </div>
               </div>

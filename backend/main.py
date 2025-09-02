@@ -1,4 +1,5 @@
 
+
 from fastapi import FastAPI, Depends, HTTPException, Form, Body, Query, WebSocket, WebSocketDisconnect
 from typing import Any
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -15,6 +16,8 @@ from sendgrid.helpers.mail import Mail
 from fastapi import APIRouter, Depends, HTTPException, Body
 from bson import ObjectId
 # تعريف التطبيق وإعدادات CORS
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -23,8 +26,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# --- ربط ملفات الواجهة الأمامية (React build) ---
+import pathlib
+build_dir = pathlib.Path(__file__).parent.parent / "build"
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
+from fastapi.requests import Request
+@app.middleware("http")
+async def spa_handler(request: Request, call_next):
+    if request.url.path.startswith("/api") or request.url.path.startswith("/docs") or request.url.path.startswith("/redoc"):
+        return await call_next(request)
+    index_path = build_dir / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+    return await call_next(request)
+# StaticFiles mount was moved to the end of the file to avoid intercepting API routes
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 # دوال JWT والمستخدم
 def create_access_token(data: dict, expires_delta: timedelta = None):
@@ -168,6 +185,22 @@ async def get_requests(current_user: dict = Depends(get_current_user)):
         # يمكنك إضافة تحويل لأي معرفات أخرى إذا وجدت
         requests.append(req)
     return requests
+
+
+@app.get("/api/utils/geolocate")
+async def api_geolocate(ip: str | None = None):
+    """Utility route: /api/utils/geolocate?ip=1.2.3.4
+    If ip is not provided returns 400. Calls AbstractAPI using `backend/ip_geolocation.py`.
+    """
+    if not ip:
+        raise HTTPException(status_code=400, detail="ip query parameter is required")
+    try:
+        from .ip_geolocation import geolocate
+    except Exception:
+        # relative import fallback for direct-run mode
+        from ip_geolocation import geolocate
+    result = await geolocate(ip)
+    return result
 
 # تغيير حالة المنتج إلى مكتمل
 @app.post("/api/products/mark-fulfilled")
@@ -946,21 +979,197 @@ async def get_me(current_user: dict = Depends(get_current_user), token: str = De
 async def create_product(product: dict, current_user: dict = Depends(get_current_user)):
     # استقبل جميع بيانات المنتج كما هي من الواجهة الأمامية
     print("[CREATE_PRODUCT] Received:", product)
+    # small defensive normalization: ensure image/image lists are safe strings (avoid storing large dicts/base64 blobs)
+    def _normalize_image_value(val):
+        try:
+            if val is None:
+                return ""
+            if isinstance(val, str):
+                return val
+            if isinstance(val, dict):
+                # common fields that may hold a URL or filename
+                for k in ("url", "file", "file_url", "data", "path", "filename", "name"):
+                    v = val.get(k)
+                    if isinstance(v, str) and len(v) < 2000:
+                        return v
+                # nested file object
+                file_obj = val.get("file") or val.get("data")
+                if isinstance(file_obj, dict):
+                    for k in ("url", "filename", "name"):
+                        v = file_obj.get(k)
+                        if isinstance(v, str) and len(v) < 2000:
+                            return v
+            # anything else -> fallback to empty string
+        except Exception:
+            pass
+        return ""
+
     product_dict = dict(product)
-    product_dict["user_id"] = str(current_user["_id"])
+    user_id = str(current_user["_id"])
+    product_dict["user_id"] = user_id
     product_dict["createdAt"] = datetime.utcnow()
-    # حذف أي حقل id مرسل من الواجهة الأمامية لضمان أن MongoDB ينشئ ObjectId تلقائيًا
+    # remove any client-sent id so MongoDB generates ObjectId
     product_dict.pop("id", None)
+    # normalize image fields to avoid storing complex objects
+    if "image" in product_dict:
+        product_dict["image"] = _normalize_image_value(product_dict.get("image"))
+    if "images" in product_dict and isinstance(product_dict.get("images"), list):
+        normalized = []
+        for it in product_dict.get("images"):
+            s = _normalize_image_value(it)
+            if s:
+                normalized.append(s)
+        product_dict["images"] = normalized
+
+    # accept optional trip linkage via trip_id or tripId in payload
+    trip_id = product_dict.pop("trip_id", None) or product_dict.pop("tripId", None)
+
     result = await db.products.insert_one(product_dict)
-    product_dict["_id"] = str(result.inserted_id)
+    inserted_id = result.inserted_id
+    product_dict["_id"] = str(inserted_id)
     print("[CREATE_PRODUCT] Inserted:", product_dict)
+
+    # if trip_id present, set it on the product and ensure trips.product_ids contains this product
+    if trip_id:
+        try:
+            # allow trip_id to be either ObjectId-like or string
+            from bson import ObjectId
+            trip_query_id = ObjectId(trip_id) if ObjectId.is_valid(str(trip_id)) else trip_id
+            await db.products.update_one({"_id": inserted_id}, {"$set": {"trip_id": str(trip_id)}})
+            # push product id into trip.product_ids for quick association (only if trip belongs to same user)
+            await db.trips.update_one({"_id": trip_query_id, "user_id": user_id}, {"$addToSet": {"product_ids": str(inserted_id)}})
+        except Exception as e:
+            print(f"[CREATE_PRODUCT] warning: failed to link product to trip {trip_id}: {e}")
+
     # Broadcast product creation to the owner (and potentially followers later)
     try:
-        owner_id = str(current_user["_id"])
+        owner_id = user_id
         await broadcast_to_user(owner_id, {"type": "product_update", "action": "created", "product": {"id": product_dict["_id"], "title": product_dict.get("title"), "image": product_dict.get("image")}})
     except Exception as e:
         print('[BROADCAST_PRODUCT_CREATED] failed', e)
     return {"msg": "Product created successfully", "product": product_dict}
+
+
+@app.post("/api/products/batch")
+async def create_products_batch(payload: list[dict] = Body(...), current_user: dict = Depends(get_current_user)):
+    """
+    Create multiple products in a single operation.
+    Tries to use a MongoDB transaction (session) when available; otherwise falls back to sequential inserts.
+
+    Returns per-item results: [{ ok: True, product: {...} } | { ok: False, error: '...' }]
+    """
+    user_id = str(current_user.get("_id"))
+    if not isinstance(payload, list):
+        raise HTTPException(status_code=400, detail="Payload must be a list of product objects")
+
+    results = []
+
+    # Try to start a session for transactional insert (best-effort)
+    session = None
+    try:
+        session = await client.start_session()
+    except Exception:
+        session = None
+
+    # Helper to process a single product (shared by transactional and non-transactional flows)
+    async def _process_single(prod_dict, session_arg=None):
+        try:
+            p = dict(prod_dict)
+            p.pop("id", None)
+            # normalize image fields on incoming payloads
+            def _normalize_image_value(val):
+                try:
+                    if val is None:
+                        return ""
+                    if isinstance(val, str):
+                        return val
+                    if isinstance(val, dict):
+                        for k in ("url", "file", "file_url", "data", "path", "filename", "name"):
+                            v = val.get(k)
+                            if isinstance(v, str) and len(v) < 2000:
+                                return v
+                        file_obj = val.get("file") or val.get("data")
+                        if isinstance(file_obj, dict):
+                            for k in ("url", "filename", "name"):
+                                v = file_obj.get(k)
+                                if isinstance(v, str) and len(v) < 2000:
+                                    return v
+                except Exception:
+                    pass
+                return ""
+
+            if "image" in p:
+                p["image"] = _normalize_image_value(p.get("image"))
+            if "images" in p and isinstance(p.get("images"), list):
+                normalized_imgs = []
+                for it in p.get("images"):
+                    s = _normalize_image_value(it)
+                    if s:
+                        normalized_imgs.append(s)
+                p["images"] = normalized_imgs
+            trip_id = p.pop("trip_id", None) or p.pop("tripId", None)
+            p["user_id"] = user_id
+            p["createdAt"] = datetime.utcnow()
+
+            # insert product
+            if session_arg:
+                res = await db.products.insert_one(p, session=session_arg)
+            else:
+                res = await db.products.insert_one(p)
+            inserted_id = res.inserted_id
+            p["_id"] = str(inserted_id)
+
+            # if trip linkage requested, update product and trip doc
+            if trip_id:
+                try:
+                    t_query = ObjectId(trip_id) if ObjectId.is_valid(str(trip_id)) else trip_id
+                    if session_arg:
+                        await db.products.update_one({"_id": inserted_id}, {"$set": {"trip_id": str(trip_id)}}, session=session_arg)
+                        await db.trips.update_one({"_id": t_query, "user_id": user_id}, {"$addToSet": {"product_ids": str(inserted_id)}}, session=session_arg)
+                    else:
+                        await db.products.update_one({"_id": inserted_id}, {"$set": {"trip_id": str(trip_id)}})
+                        await db.trips.update_one({"_id": t_query, "user_id": user_id}, {"$addToSet": {"product_ids": str(inserted_id)}})
+                except Exception as e:
+                    # don't fail entire batch for trip linkage issues; log and continue
+                    print(f"[BATCH_CREATE] warning: failed to link product {inserted_id} to trip {trip_id}: {e}")
+
+            # broadcast creation
+            try:
+                await broadcast_to_user(user_id, {"type": "product_update", "action": "created", "product": {"id": p["_id"], "title": p.get("title")}})
+            except Exception:
+                pass
+
+            return {"ok": True, "product": p}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # If session/transactions are available, run inside a transaction (best-effort)
+    if session:
+        try:
+            async with session.start_transaction():
+                for item in payload:
+                    res = await _process_single(item, session_arg=session)
+                    if not res.get("ok"):
+                        # any failure aborts the transaction by raising
+                        raise Exception(res.get("error") or "unknown error")
+                    results.append(res)
+            return {"ok": True, "results": results}
+        except Exception as e:
+            # transaction aborted
+            print(f"[BATCH_CREATE] transaction failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Batch insert failed: {e}")
+        finally:
+            try:
+                await session.end_session()
+            except Exception:
+                pass
+
+    # Fallback: sequential, best-effort inserts
+    for item in payload:
+        res = await _process_single(item, session_arg=None)
+        results.append(res)
+
+    return {"ok": True, "results": results}
 
 # تعديل منتج موجود
 from bson import ObjectId
@@ -972,11 +1181,49 @@ async def update_product(product_id: str, product: dict, current_user: dict = De
     product.pop("id", None)
     # بناء update dict
     update_fields = {k: v for k, v in product.items() if v is not None}
+
+    # handle optional trip_id change on product edit
+    trip_change = None
+    if "trip_id" in update_fields:
+        trip_change = update_fields.pop("trip_id")
+    elif "tripId" in update_fields:
+        trip_change = update_fields.pop("tripId")
+
+    # perform the main update
     result = await db.products.update_one({"_id": ObjectId(product_id), "user_id": user_id}, {"$set": update_fields})
     if result.modified_count == 1:
         return {"msg": "Product updated successfully", "id": product_id}
     else:
         raise HTTPException(status_code=404, detail="Product not found or not owned by user")
+
+    # if trip change requested, try to link/unlink accordingly
+    if trip_change is not None:
+        try:
+            from bson import ObjectId as BsonObjectId
+            # if trip_change is falsy, remove linkage
+            if not trip_change:
+                # unset trip_id on product and pull from any trip docs
+                await db.products.update_one({"_id": ObjectId(product_id)}, {"$unset": {"trip_id": ""}})
+                await db.trips.update_many({}, {"$pull": {"product_ids": str(product_id)}})
+            else:
+                # link product to trip: verify ownership of trip
+                t_query = BsonObjectId(trip_change) if BsonObjectId.is_valid(str(trip_change)) else str(trip_change)
+                trip_doc = await db.trips.find_one({"_id": t_query})
+                if not trip_doc:
+                    # maybe stored as string id
+                    trip_doc = await db.trips.find_one({"_id": str(trip_change)})
+                if not trip_doc:
+                    # don't raise; just warn
+                    print(f"[UPDATE_PRODUCT] requested trip {trip_change} not found when editing product {product_id}")
+                else:
+                    # ensure same owner or admin
+                    if str(trip_doc.get("user_id")) != user_id and current_user.get("role") != "admin":
+                        print(f"[UPDATE_PRODUCT] user {user_id} not owner of trip {trip_change}")
+                    else:
+                        await db.products.update_one({"_id": ObjectId(product_id)}, {"$set": {"trip_id": str(trip_change)}})
+                        await db.trips.update_one({"_id": t_query}, {"$addToSet": {"product_ids": str(product_id)}})
+        except Exception as e:
+            print(f"[UPDATE_PRODUCT] trip linking error: {e}")
 
 # إشعارات المسافر من قاعدة البيانات
 @app.get("/api/dashboard/notifications")
@@ -990,17 +1237,68 @@ async def get_dashboard_notifications(current_user: dict = Depends(get_current_u
 
 # العروض النشطة من قاعدة البيانات
 @app.get("/api/dashboard/active-listings")
-async def get_dashboard_active_listings(current_user: dict = Depends(get_current_user)):
+async def get_dashboard_active_listings(trip_id: str | None = None, current_user: dict = Depends(get_current_user)):
+    """
+    Return active listings for the current user.
+    If trip_id is provided, exclude listings that are already linked to a different trip.
+    This ensures the Manage Products modal only shows products that can be linked to the given trip.
+    """
     user_id = str(current_user["_id"])
     listings = []
-    async for product in db.products.find({"user_id": user_id, "isActive": True}):
+    # base query: user's active products
+    query = {"user_id": user_id, "isActive": True}
+    async for product in db.products.find(query):
+        # if product has an explicit trip_id and it does not match the requested trip_id, skip it
+        prod_trip = product.get("trip_id")
+        if prod_trip and trip_id and str(prod_trip) != str(trip_id):
+            # skip products already linked to a different trip
+            continue
         product["_id"] = str(product["_id"])
+        # normalize image path: if it's a bare filename, prefix with /assets/images/
+        raw_image = product.get("image", "") or ""
+        img = ""
+        try:
+            # If image stored as a dict/object, prefer explicit keys
+            if isinstance(raw_image, dict):
+                # prefer a 'file' (could be data URL or path), then 'url', then 'name'
+                file_val = raw_image.get("file") or raw_image.get("url") or raw_image.get("name")
+                if isinstance(file_val, str):
+                    # if data URL or absolute/relative URL, use as-is
+                    if file_val.startswith("data:") or file_val.startswith("http") or file_val.startswith("/"):
+                        img = file_val
+                    else:
+                        # treat as filename
+                        img = f"/assets/images/{file_val}"
+                else:
+                    img = str(file_val) if file_val is not None else ""
+            # If a list, try the first element
+            elif isinstance(raw_image, list):
+                first = raw_image[0] if raw_image else ""
+                if isinstance(first, dict):
+                    img = first.get("file") or first.get("url") or first.get("name") or ""
+                else:
+                    img = str(first)
+            else:
+                s = str(raw_image).strip()
+                if not s:
+                    img = ""
+                elif s.startswith("/") or s.startswith("http") or s.startswith("data:"):
+                    img = s
+                else:
+                    img = f"/assets/images/{s}"
+        except Exception:
+            img = str(raw_image)
+
+        # fallback placeholder if nothing usable
+        if not img:
+            img = "https://placehold.co/400x300?text=No+Image"
+
         card = {
             "id": product["_id"],
             "title": product.get("title", "No Title"),
             "description": product.get("description", "No Description"),
             "price": product.get("price", 0),
-            "image": product.get("image", ""),
+            "image": img,
             "status": "active" if product.get("isActive", True) else "expired",
             "requestCount": product.get("requestCount", 0),
             "destination": product.get("arrivalAirport", "-")
@@ -1012,21 +1310,399 @@ async def get_dashboard_active_listings(current_user: dict = Depends(get_current
 @app.get("/api/dashboard/upcoming-trips")
 async def get_dashboard_upcoming_trips(current_user: dict = Depends(get_current_user)):
     user_id = str(current_user["_id"])
+    """
+    Return upcoming trips for the current user.
+    Primary source: explicit trips in `db.trips` (created by traveler via POST /api/trips).
+    Fallback/augmentation: products that still declare travelDates but aren't linked to a trip.
+    """
     upcoming = []
     today = datetime.utcnow().date()
-    async for product in db.products.find({"user_id": user_id, "travelDates.departure": {"$gte": today.isoformat()}}):
-        trip = {
-            "id": str(product["_id"]),
-            "route": f"{product.get('departureAirport', '')} → {product.get('arrivalAirport', '')}",
-            "departureAirport": product.get("departureAirport"),
-            "arrivalAirport": product.get("arrivalAirport"),
-            "departureDate": product.get("travelDates", {}).get("departure"),
-            "returnDate": product.get("travelDates", {}).get("return"),
-            "associatedListings": product.get("associatedListings", 0),
-            "potentialBuyers": product.get("potentialBuyers", 0)
-        }
-        upcoming.append(trip)
+
+    # 1) Trips explicitly created and stored in db.trips
+    try:
+        async for trip_doc in db.trips.find({"user_id": user_id}).sort("departureDate", 1):
+            try:
+                # calculate potentialBuyers by counting pending requests for associated products
+                product_ids = trip_doc.get("product_ids") or []
+                associated_count = len(product_ids)
+                potential_buyers = 0
+                for pid in product_ids:
+                    try:
+                        potential_buyers += await db.requests.count_documents({"product_id": str(pid), "status": "pending"})
+                    except Exception:
+                        continue
+
+                trip = {
+                    "id": str(trip_doc.get("_id")),
+                    "route": f"{trip_doc.get('departureAirport', '')} → {trip_doc.get('arrivalAirport', '')}",
+                    "departureAirport": trip_doc.get("departureAirport"),
+                    "arrivalAirport": trip_doc.get("arrivalAirport"),
+                    "departureDate": trip_doc.get("departureDate"),
+                    "returnDate": trip_doc.get("returnDate"),
+                    "associatedListings": associated_count,
+                    "potentialBuyers": potential_buyers,
+                    "product_ids": [str(x) for x in product_ids]
+                }
+                upcoming.append(trip)
+            except Exception as e:
+                print(f"[UPCOMING_TRIPS] error processing trip_doc {trip_doc.get('_id')}: {e}")
+    except Exception as e:
+        print(f"[UPCOMING_TRIPS] error querying db.trips: {e}")
+
+    # 2) Also include product-derived trips for backwards compatibility when products declare travelDates
+    try:
+        async for product in db.products.find({"user_id": user_id, "$or": [{"trip_id": {"$exists": False}}, {"trip_id": None}], "travelDates.departure": {"$gte": today.isoformat()}}):
+            try:
+                trip = {
+                    "id": str(product.get("_id")),
+                    "route": f"{product.get('departureAirport', '')} → {product.get('arrivalAirport', '')}",
+                    "departureAirport": product.get("departureAirport"),
+                    "arrivalAirport": product.get("arrivalAirport"),
+                    "departureDate": product.get("travelDates", {}).get("departure"),
+                    "returnDate": product.get("travelDates", {}).get("return"),
+                    "associatedListings": product.get("associatedListings", 0),
+                    "potentialBuyers": product.get("potentialBuyers", 0)
+                }
+                upcoming.append(trip)
+            except Exception:
+                continue
+    except Exception as e:
+        print(f"[UPCOMING_TRIPS] error querying product-derived trips: {e}")
+
     return upcoming
+
+
+@app.post("/api/trips")
+async def create_trip(payload: dict = Body(...), current_user: dict = Depends(get_current_user)):
+    """
+    Create a trip resource and optionally associate existing product listings with it.
+
+    Expected payload shape (JSON):
+      {
+        "departureAirport": "XXX",
+        "arrivalAirport": "YYY",
+        "departureDate": "2025-09-10",
+        "returnDate": "2025-09-20",
+        "product_ids": ["<productId1>", "<productId2>"]
+      }
+
+    The endpoint will create a document in `db.trips` and mark the provided products with `trip_id`.
+    Only users with role 'traveler' can create trips.
+    """
+    try:
+        role = current_user.get("role")
+        if role != "traveler":
+            raise HTTPException(status_code=403, detail="Only travelers can create trips")
+
+        user_id = str(current_user.get("_id"))
+        departureAirport = payload.get("departureAirport")
+        arrivalAirport = payload.get("arrivalAirport")
+        departureDate = payload.get("departureDate")
+        returnDate = payload.get("returnDate")
+        product_ids = payload.get("product_ids") or payload.get("productIds") or []
+
+        trip_doc = {
+            "user_id": user_id,
+            "departureAirport": departureAirport,
+            "arrivalAirport": arrivalAirport,
+            "departureDate": departureDate,
+            "returnDate": returnDate,
+            "product_ids": [str(x) for x in product_ids],
+            "createdAt": datetime.utcnow()
+        }
+        res = await db.trips.insert_one(trip_doc)
+        trip_id = str(res.inserted_id)
+
+        # Associate products with this trip by setting trip_id on product documents
+        from bson import ObjectId
+        for pid in product_ids:
+            try:
+                query_id = ObjectId(pid) if ObjectId.is_valid(str(pid)) else pid
+                await db.products.update_one({"_id": query_id, "user_id": user_id}, {"$set": {"trip_id": trip_id}})
+            except Exception as e:
+                print(f"[CREATE_TRIP] failed to associate product {pid}: {e}")
+
+        trip_doc["id"] = trip_id
+        trip_doc["_id"] = trip_id
+        return {"ok": True, "trip": trip_doc}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[CREATE_TRIP] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/trips/{trip_id}")
+async def get_trip(trip_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Return a trip document along with aggregated product details for that trip.
+    Permission: trip owner or admin.
+    """
+    try:
+        from bson import ObjectId
+        trip = None
+        # 1) try ObjectId lookup when the id looks like an ObjectId
+        if ObjectId.is_valid(str(trip_id)):
+            try:
+                maybe_oid = ObjectId(str(trip_id))
+                trip = await db.trips.find_one({"_id": maybe_oid})
+            except Exception as e:
+                print(f"[GET_TRIP] ObjectId lookup error for {trip_id}: {e}")
+
+        # 2) try string _id lookup (some documents may have string _id)
+        if not trip:
+            try:
+                trip = await db.trips.find_one({"_id": str(trip_id)})
+            except Exception as e:
+                print(f"[GET_TRIP] string _id lookup error for {trip_id}: {e}")
+
+        # 3) try 'id' field fallback (returned trip docs sometimes put id in 'id')
+        if not trip:
+            try:
+                trip = await db.trips.find_one({"id": str(trip_id)})
+            except Exception as e:
+                print(f"[GET_TRIP] fallback id field lookup error for {trip_id}: {e}")
+
+        if not trip:
+            # Try product-derived trip: maybe the frontend passed a product._id
+            try:
+                prod = None
+                # try ObjectId product lookup
+                if ObjectId.is_valid(str(trip_id)):
+                    try:
+                        prod = await db.products.find_one({"_id": ObjectId(str(trip_id))})
+                    except Exception:
+                        prod = None
+                # fallback string _id lookup
+                if not prod:
+                    try:
+                        prod = await db.products.find_one({"_id": str(trip_id)})
+                    except Exception:
+                        prod = None
+
+                if prod and prod.get("travelDates"):
+                    # build a trip-like response from the product
+                    product_obj = {
+                        "id": str(prod.get("_id")),
+                        "title": prod.get("title"),
+                        "image": prod.get("image"),
+                        "price": prod.get("price"),
+                        "status": prod.get("status") or ("active" if prod.get("isActive", True) else "expired")
+                    }
+                    resp = {
+                        "id": str(prod.get("_id")),
+                        "departureAirport": prod.get("departureAirport"),
+                        "arrivalAirport": prod.get("arrivalAirport"),
+                        "departureDate": prod.get("travelDates", {}).get("departure"),
+                        "returnDate": prod.get("travelDates", {}).get("return"),
+                        "product_ids": [str(prod.get("_id"))],
+                        "products": [product_obj]
+                    }
+                    return resp
+            except Exception as e:
+                print(f"[GET_TRIP] product-derived fallback error for id={trip_id}: {e}")
+
+            print(f"[GET_TRIP] trip not found for id={trip_id} (tried ObjectId, string _id, and id field)")
+            raise HTTPException(status_code=404, detail="Trip not found")
+
+        # permission check: only owner or admin can view full trip details
+        user_id = str(current_user.get("_id"))
+        if trip.get("user_id") != user_id and current_user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Not allowed to view this trip")
+
+        # normalize trip id to string for response
+        trip_id_str = str(trip.get("_id")) if trip.get("_id") else str(trip_id)
+        product_ids = trip.get("product_ids") or []
+
+        products = []
+        for pid in product_ids:
+            try:
+                pid_query = ObjectId(pid) if ObjectId.is_valid(str(pid)) else pid
+                prod = await db.products.find_one({"_id": pid_query})
+                if not prod:
+                    prod = await db.products.find_one({"_id": str(pid)})
+                if prod:
+                    products.append({
+                        "id": str(prod.get("_id")),
+                        "title": prod.get("title"),
+                        "image": prod.get("image"),
+                        "price": prod.get("price"),
+                        "status": prod.get("status") or ("active" if prod.get("isActive", True) else "expired")
+                    })
+            except Exception:
+                continue
+
+        resp = {
+            "id": trip_id_str,
+            "departureAirport": trip.get("departureAirport"),
+            "arrivalAirport": trip.get("arrivalAirport"),
+            "departureDate": trip.get("departureDate"),
+            "returnDate": trip.get("returnDate"),
+            "product_ids": [str(x) for x in product_ids],
+            "products": products
+        }
+        return resp
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[GET_TRIP] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/trips")
+async def list_trips(current_user: dict = Depends(get_current_user)):
+    """
+    Return all trips for the current user, each including a lightweight products array (id, title, image, price).
+    Admins can pass ?user_id=<id> to view another user's trips.
+    """
+    try:
+        user_id = str(current_user.get("_id"))
+        query_user = user_id
+        # allow admin to query other user's trips via query param
+        if current_user.get("role") == "admin":
+            from fastapi import Request
+            # fast way: read query param via Request injection not available here, so accept optional user_id via query
+            pass
+        trips = []
+        async for t in db.trips.find({"user_id": query_user}).sort("departureDate", 1):
+            product_ids = t.get("product_ids") or []
+            products = []
+            for pid in product_ids:
+                try:
+                    pid_query = ObjectId(pid) if ObjectId.is_valid(str(pid)) else pid
+                    prod = await db.products.find_one({"_id": pid_query})
+                    if not prod:
+                        prod = await db.products.find_one({"_id": str(pid)})
+                    if prod:
+                        products.append({"id": str(prod.get("_id")), "title": prod.get("title"), "image": prod.get("image"), "price": prod.get("price")})
+                except Exception:
+                    continue
+            trips.append({
+                "id": str(t.get("_id")),
+                "departureAirport": t.get("departureAirport"),
+                "arrivalAirport": t.get("arrivalAirport"),
+                "departureDate": t.get("departureDate"),
+                "returnDate": t.get("returnDate"),
+                "product_ids": [str(x) for x in product_ids],
+                "products": products
+            })
+        return trips
+    except Exception as e:
+        print(f"[LIST_TRIPS] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/trips/{trip_id}")
+async def modify_trip(trip_id: str, payload: dict = Body(...), current_user: dict = Depends(get_current_user)):
+    """
+    Modify trip associations. Payload shape:
+      { "add": ["prodId1", ...], "remove": ["prodId2", ...] }
+    Only trip owner or admin can modify.
+    """
+    try:
+        from bson import ObjectId
+
+        # user id for permission checks (defined early since fallback may use it)
+        user_id = str(current_user.get("_id"))
+
+        # locate trip
+        query_id = ObjectId(trip_id) if ObjectId.is_valid(str(trip_id)) else str(trip_id)
+        trip = await db.trips.find_one({"_id": query_id})
+        if not trip:
+            trip = await db.trips.find_one({"_id": str(trip_id)})
+
+        # If trip not found, attempt to create a trip document if the provided id is actually a product id
+        if not trip:
+            prod = None
+            try:
+                p_query = ObjectId(trip_id) if ObjectId.is_valid(str(trip_id)) else str(trip_id)
+                prod = await db.products.find_one({"_id": p_query})
+                if not prod:
+                    prod = await db.products.find_one({"_id": str(trip_id)})
+            except Exception:
+                prod = None
+
+            if prod and prod.get("travelDates"):
+                # ensure caller is owner of the product or admin
+                prod_owner = str(prod.get("user_id"))
+                if prod_owner != user_id and current_user.get("role") != "admin":
+                    raise HTTPException(status_code=403, detail="Not allowed to create trip from this product")
+
+                # create a trip using product's travelDates and airports
+                try:
+                    new_trip = {
+                        "user_id": prod_owner,
+                        "departureAirport": prod.get("departureAirport"),
+                        "arrivalAirport": prod.get("arrivalAirport"),
+                        "departureDate": prod.get("travelDates", {}).get("departure"),
+                        "returnDate": prod.get("travelDates", {}).get("return"),
+                        "product_ids": [str(prod.get("_id"))],
+                        "createdAt": datetime.utcnow()
+                    }
+                    res = await db.trips.insert_one(new_trip)
+                    created_id = res.inserted_id
+                    # ensure product.trip_id set
+                    await db.products.update_one({"_id": prod.get("_id")}, {"$set": {"trip_id": str(created_id)}})
+                    # reload trip
+                    trip = await db.trips.find_one({"_id": created_id})
+                    query_id = created_id
+                except Exception as e:
+                    print(f"[MODIFY_TRIP] failed to create trip from product {trip_id}: {e}")
+                    raise HTTPException(status_code=500, detail="Failed to create trip from product")
+            else:
+                raise HTTPException(status_code=404, detail="Trip not found")
+
+        # permission check
+        if trip.get("user_id") != user_id and current_user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Not allowed to modify this trip")
+
+        add_ids = payload.get("add") or []
+        remove_ids = payload.get("remove") or []
+
+        # sanitize ids to strings
+        add_ids = [str(x) for x in add_ids]
+        remove_ids = [str(x) for x in remove_ids]
+
+        # For additions: verify products exist and belong to the user (or allow adding own products)
+        for pid in add_ids:
+            try:
+                p_query = ObjectId(pid) if ObjectId.is_valid(pid) else pid
+                prod = await db.products.find_one({"_id": p_query})
+                if not prod:
+                    # try string id
+                    prod = await db.products.find_one({"_id": str(pid)})
+                if not prod:
+                    print(f"[MODIFY_TRIP] product {pid} not found; skipping add")
+                    continue
+                # ensure ownership: only allow adding products that belong to trip owner or admin
+                if str(prod.get("user_id")) != user_id and current_user.get("role") != "admin":
+                    print(f"[MODIFY_TRIP] product {pid} not owned by user {user_id}; skipping")
+                    continue
+                # set product.trip_id and push into trip.product_ids
+                await db.products.update_one({"_id": p_query}, {"$set": {"trip_id": str(trip.get("_id") or trip_id)}})
+                await db.trips.update_one({"_id": query_id}, {"$addToSet": {"product_ids": str(pid)}})
+            except Exception as e:
+                print(f"[MODIFY_TRIP] error adding product {pid}: {e}")
+
+        # For removals: unset trip_id on product and pull from trip.product_ids
+        for pid in remove_ids:
+            try:
+                p_query = ObjectId(pid) if ObjectId.is_valid(pid) else pid
+                await db.products.update_one({"_id": p_query, "trip_id": str(trip.get("_id") or trip_id)}, {"$unset": {"trip_id": ""}})
+                await db.trips.update_one({"_id": query_id}, {"$pull": {"product_ids": str(pid)}})
+            except Exception as e:
+                print(f"[MODIFY_TRIP] error removing product {pid}: {e}")
+
+        # return updated trip summary
+        updated_trip = await db.trips.find_one({"_id": query_id})
+        updated_trip_id = str(updated_trip.get("_id")) if updated_trip else str(trip_id)
+        product_ids = updated_trip.get("product_ids") if updated_trip else []
+        return {"ok": True, "trip": {"id": updated_trip_id, "product_ids": [str(x) for x in (product_ids or [])]}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[MODIFY_TRIP] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # منتجات المستخدم للداشبورد
 @app.get("/api/dashboard/orders")
@@ -1125,6 +1801,7 @@ async def create_conversation(recipient_id: str = Body(...), product_id: str = B
 async def list_conversations(current_user: dict = Depends(get_current_user)):
     try:
         user_id = str(current_user["_id"])
+        role = current_user.get("role")
         convs = []
         async for conv in db.conversations.find({"participants": user_id}).sort("lastMessageTime", -1):
             conv_id_str = str(conv["_id"])
@@ -1145,6 +1822,11 @@ async def list_conversations(current_user: dict = Depends(get_current_user)):
                 product = await db.products.find_one({"_id": pid}) if pid else None
                 if product:
                     product = {"id": str(product.get("_id")), "title": product.get("title"), "image": product.get("image")}
+
+            # Server-side role filtering: travelers should only see conversations associated with a product
+            if role == 'traveler' and not product:
+                # skip conversations that are not tied to a product for travelers
+                continue
 
             # fetch last message
             last_msg = await db.messages.find_one({"conversationId": conv_id_str}, sort=[("timestamp", -1)])
@@ -1461,3 +2143,10 @@ async def mark_notification_read(notification_id: str, current_user: dict = Depe
     except Exception as e:
         print(f"[MARK_NOTIFICATION_READ] error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Mount static files last so API routes are matched first
+try:
+    app.mount("/", StaticFiles(directory=build_dir, html=True), name="static")
+except Exception as e:
+    print(f"[STATIC_MOUNT] failed: {e}")

@@ -20,9 +20,15 @@ const ProductListingCreation = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [user, setUser] = useState(null);
+  const [batch, setBatch] = useState([]); // queued products for multi-create
+  const [batchResults, setBatchResults] = useState([]); // per-item publish results
+  const [isPublishingBatch, setIsPublishingBatch] = useState(false);
+  const [currentPublishResult, setCurrentPublishResult] = useState(null); // result for the current draft when included
   // Detect edit mode from URL
   const searchParams = new URLSearchParams(location.search);
   const editId = searchParams.get('edit');
+  const tripId = searchParams.get('trip_id');
+  const [tripInfo, setTripInfo] = useState(null);
 
   // ✅ تعريف الخطوات (كان ناقص)
   const steps = [
@@ -111,6 +117,25 @@ const ProductListingCreation = () => {
     };
     fetchUser();
   }, []);
+
+  // if tripId provided, fetch trip details for confirmation banner
+  useEffect(() => {
+    if (!tripId) return;
+    let cancelled = false;
+    const fetchTrip = async () => {
+      try {
+        const token = localStorage.getItem('accessToken');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const res = await api.get(`/api/trips/${tripId}`, { headers });
+        if (!cancelled) setTripInfo(res.data || null);
+      } catch (err) {
+        console.debug('[ProductListingCreation] failed to load trip info', err);
+        if (!cancelled) setTripInfo(null);
+      }
+    };
+    fetchTrip();
+    return () => { cancelled = true; };
+  }, [tripId]);
 
   const updateFormData = (field, value) => {
     setFormData(prev => ({
@@ -215,6 +240,7 @@ const ProductListingCreation = () => {
         travelDates: formData.travelDates,
         pickupOptions: formData.pickupOptions,
         isActive: formData.isActive,
+  trip_id: formData.trip_id || tripId || undefined,
         traveler: {
           fullName: user?.fullName,
           avatar: user?.avatar || "https://ui-avatars.com/api/?name=" + (user?.fullName || "Traveler"),
@@ -238,6 +264,163 @@ const ProductListingCreation = () => {
     } catch (error) {
       console.error('Failed to publish listing:', error);
     } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- Batch (multi-create) helpers ---
+  const isFormComplete = () => {
+    // require all steps to be valid
+    return (
+      formData.productName && formData.category && formData.description &&
+      formData.images.length > 0 &&
+      formData.basePrice && formData.currency &&
+      formData.departureAirport && formData.arrivalAirport &&
+      formData.travelDates?.departure && formData.travelDates?.arrival
+    );
+  };
+
+  const buildProductPayload = (f) => ({
+    title: f.productName,
+    description: f.description,
+    price: parseFloat(f.basePrice) || 0,
+    image: f.images[0] || "",
+    category: f.category,
+    quantity: f.quantity,
+    currency: f.currency,
+    departureAirport: f.departureAirport,
+    arrivalAirport: f.arrivalAirport,
+    travelDates: f.travelDates,
+    pickupOptions: f.pickupOptions,
+    isActive: f.isActive,
+  // attach trip_id when available so product is associated with the trip
+  trip_id: f.trip_id || tripId || undefined,
+    traveler: {
+      fullName: user?.fullName,
+      avatar: user?.avatar || "https://ui-avatars.com/api/?name=" + (user?.fullName || "Traveler"),
+      rating: user?.rating || 4,
+      reviewCount: user?.reviewCount || 12
+    }
+  });
+
+  const addToBatch = () => {
+    if (editId) {
+      alert('Batch create is not available while editing a single product.');
+      return;
+    }
+    if (!isFormComplete()) {
+      alert('Please complete all steps before adding to the batch.');
+      return;
+    }
+  setBatch(prev => [...prev, { ...formData, trip_id: tripId || formData.trip_id }]);
+    // reset form for next entry
+    setFormData({
+      productName: '',
+      category: '',
+      description: '',
+      images: [],
+      basePrice: '',
+      currency: 'USD',
+      departureAirport: '',
+      arrivalAirport: '',
+      travelDates: { departure: '', arrival: '' },
+      pickupOptions: [],
+      quantity: 1,
+      isActive: true
+    });
+    setCurrentStep(1);
+    setIsDirty(false);
+  };
+
+  const publishBatch = async () => {
+    if (editId) {
+      alert('Batch create is not available while editing a single product.');
+      return;
+    }
+
+    // Determine whether to include the current draft in the payload.
+    // Include current draft when it's complete and there is at least one queued item.
+    const includeCurrent = isFormComplete() && batch.length >= 1;
+
+    if (batch.length === 0 && !includeCurrent) {
+      alert('No products in batch. Use "Add to batch" to queue products.');
+      return;
+    }
+
+    setIsPublishingBatch(true);
+    setIsLoading(true);
+    setCurrentPublishResult(null);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const headers = { Authorization: `Bearer ${token}` };
+
+      const payloads = batch.map(buildProductPayload);
+      if (includeCurrent) {
+        payloads.push(buildProductPayload(formData));
+        // mark current draft pending
+        setCurrentPublishResult({ ok: null, message: 'pending' });
+      }
+
+      // initialize per-item pending state for queued items only
+      setBatchResults(payloads.slice(0, batch.length).map(() => ({ ok: null, message: 'pending' })));
+
+      const res = await api.post('/api/products/batch', payloads, { headers });
+      const data = res?.data || {};
+      if (data && Array.isArray(data.results)) {
+        const results = data.results;
+
+        // split results between queued items and the optionally included current draft
+        const queuedResults = results.slice(0, batch.length);
+        const currentResult = includeCurrent ? results[results.length - 1] : null;
+
+        setBatchResults(queuedResults.map(r => ({ ok: !!r.ok, message: r.ok ? 'published' : (r.error || 'failed') })));
+        if (includeCurrent) setCurrentPublishResult({ ok: !!currentResult.ok, message: currentResult.ok ? 'published' : (currentResult.error || 'failed') });
+
+        const successCount = results.filter(r => r.ok).length;
+        const failCount = results.length - successCount;
+
+        if (failCount === 0) {
+          // all good: clear batch and clear current draft if it was included
+          setBatch([]);
+          if (includeCurrent) {
+            setFormData({
+              productName: '',
+              category: '',
+              description: '',
+              images: [],
+              basePrice: '',
+              currency: 'USD',
+              departureAirport: '',
+              arrivalAirport: '',
+              travelDates: { departure: '', arrival: '' },
+              pickupOptions: [],
+              quantity: 1,
+              isActive: true
+            });
+          }
+          localStorage.removeItem('product-listing-draft');
+          navigate('/traveler-dashboard', { state: { message: 'Batch published successfully!' } });
+        } else {
+          // keep failed queued items in batch for retry
+          const failedQueued = batch.filter((_, idx) => !(queuedResults[idx] && queuedResults[idx].ok));
+          setBatch(failedQueued);
+
+          // if current draft failed, leave it in the form (user can edit and retry)
+          if (includeCurrent && currentResult && !currentResult.ok) {
+            // keep current form as is
+          }
+
+          alert(`${failCount} item(s) failed to publish. Failed queued items were kept in the batch for retry.`);
+        }
+      } else {
+        console.error('[publishBatch] unexpected response:', data);
+        alert('Batch publish returned unexpected response. See console.');
+      }
+    } catch (err) {
+      console.error('Batch publish error:', err);
+      alert('Failed to publish batch. See console for details.');
+    } finally {
+      setIsPublishingBatch(false);
       setIsLoading(false);
     }
   };
@@ -378,15 +561,36 @@ const ProductListingCreation = () => {
 
               <div className="flex items-center space-x-3">
                 {currentStep === steps.length ? (
-                  <Button
-                    variant="default"
-                    onClick={handlePublish}
-                    loading={isLoading}
-                    iconName="Send"
-                    iconPosition="left"
-                  >
-                    Publish Listing
-                  </Button>
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={addToBatch}
+                      disabled={!isFormComplete() || isLoading}
+                      iconName="Plus"
+                    >
+                      Add to batch
+                    </Button>
+                    <Button
+                      variant="default"
+                      onClick={handlePublish}
+                      loading={isLoading}
+                      iconName="Send"
+                      iconPosition="left"
+                    >
+                      Publish Listing
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={publishBatch}
+                      disabled={(!(batch.length >= 2 || (batch.length >= 1 && isFormComplete())) ) || isLoading}
+                    >
+                      Publish Batch ({batch.length}{(batch.length >= 1 && isFormComplete()) ? '+' : ''})
+                    </Button>
+                    {/* show hint only when the draft will be auto-included (i.e. batch has at least 1 and draft is complete) and there are less than 2 queued items */}
+                    {batch.length >= 1 && isFormComplete() && batch.length < 2 && (
+                      <div className="text-xs text-muted-foreground mt-1">Current draft will be included in the batch</div>
+                    )}
+                  </>
                 ) : (
                   <Button
                     variant="default"
@@ -401,6 +605,73 @@ const ProductListingCreation = () => {
               </div>
             </div>
 
+            {/* Trip confirmation banner */}
+            {tripInfo && (
+              <div className="max-w-4xl mx-auto mt-4">
+                <div className="bg-accent/10 border border-accent rounded-lg p-3 text-sm">
+                  <div className="font-medium">This product(s) will be linked to trip:</div>
+                  <div className="text-xs text-muted-foreground">{tripInfo.route || `${tripInfo.departureAirport} → ${tripInfo.arrivalAirport}`}</div>
+                  {tripInfo.departureDate && (
+                    <div className="text-xs text-muted-foreground">Departure: {String(tripInfo.departureDate)}</div>
+                  )}
+                  {tripInfo.returnDate && (
+                    <div className="text-xs text-muted-foreground">Return: {String(tripInfo.returnDate)}</div>
+                  )}
+                </div>
+              </div>
+            )}
+
+
+          {/* Batch summary */}
+          {batch.length > 0 && (
+            <div className="max-w-4xl mx-auto mt-6">
+              <div className="bg-card border border-border rounded-lg p-4">
+                <h4 className="font-semibold mb-2">Queued products ({batch.length})</h4>
+                <ul className="text-sm text-muted-foreground space-y-1">
+                  {batch.map((b, idx) => {
+                    const r = batchResults[idx] || { ok: null, message: '' };
+                    return (
+                      <li key={idx} className="flex items-center justify-between">
+                        <div>
+                          <div className="font-medium">{b.productName || '(untitled)'}</div>
+                          <div className="text-xs text-muted-foreground">{b.category || 'No category'}</div>
+                        </div>
+                        <div className="flex items-center space-x-3">
+                          {r.message === 'pending' && (
+                            <span className="text-xs text-blue-600">Publishing…</span>
+                          )}
+                          {r.ok === true && (
+                            <span className="text-xs text-green-600">Published</span>
+                          )}
+                          {r.ok === false && (
+                            <>
+                              <span className="text-xs text-red-600">Failed</span>
+                              <button
+                                className="ml-2 text-xs underline text-blue-600"
+                                onClick={() => {
+                                  const failed = batch[idx];
+                                  // put failed item back into form for edit
+                                  setFormData({ ...failed });
+                                  setCurrentStep(1);
+                                  // remove this item from the batch list
+                                  setBatch(batch.filter((_, i) => i !== idx));
+                                }}
+                              >
+                                Edit
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {isPublishingBatch && (
+                  <div className="mt-3 text-sm text-muted-foreground">Publishing batch — please wait…</div>
+                )}
+              </div>
+            </div>
+          )}
             {/* Preview Modal */}
             {showPreview && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">

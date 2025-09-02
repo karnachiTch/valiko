@@ -12,7 +12,7 @@ const SearchHeader = ({ searchQuery, onSearchChange, onVoiceSearch }) => {
   };
 
   return (
-    <div className="bg-card border-b border-border sticky top-0 z-50">
+  <div className="bg-card border-b border-border">
       <div className="px-4 py-3">
         <div className="relative">
           <Input
