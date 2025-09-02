@@ -1005,6 +1005,10 @@ async def create_product(product: dict, current_user: dict = Depends(get_current
                 normalized.append(s)
         product_dict["images"] = normalized
 
+    # Ensure visibility defaults: new products should be active unless explicitly disabled
+    product_dict["isActive"] = product_dict.get("isActive", True)
+    product_dict["status"] = product_dict.get("status", "active")
+
     # accept optional trip linkage via trip_id or tripId in payload
     trip_id = product_dict.pop("trip_id", None) or product_dict.pop("tripId", None)
 
@@ -1091,6 +1095,10 @@ async def create_products_batch(payload: list[dict] = Body(...), current_user: d
                     if s:
                         normalized_imgs.append(s)
                 p["images"] = normalized_imgs
+
+            # Ensure visibility defaults for batch items
+            p["isActive"] = p.get("isActive", True)
+            p["status"] = p.get("status", "active")
             trip_id = p.pop("trip_id", None) or p.pop("tripId", None)
             p["user_id"] = user_id
             p["createdAt"] = datetime.utcnow()
