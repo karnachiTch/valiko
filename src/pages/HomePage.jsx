@@ -141,6 +141,7 @@ import React, { useEffect, useState, useRef } from "react";
 import LoginForm from "./login-screen/components/LoginForm";
 import { useNavigate } from "react-router-dom";
 import { PaperAirplaneIcon } from "@heroicons/react/24/solid";
+import api from "../api";
 
 export default function HomePage() {
   const [products, setProducts] = useState([]);
@@ -154,19 +155,19 @@ export default function HomePage() {
   const containerRef = useRef(null);
 
   useEffect(() => {
-    // جلب جميع المنتجات المضافة من الواجهة الخلفية
-    const apiUrl = (import.meta && import.meta.env && import.meta.env.DEV)
-      ? 'http://127.0.0.1:8000/api/products'
-      : '/api/products';
-    fetch(apiUrl)
-      .then((res) => res.json())
-      .then((data) => {
-        console.log('API /api/products response:', data); // لعرض البيانات القادمة من الواجهة الخلفية
-        // backend sometimes returns { value: [...] } or the array directly
+    // جلب جميع المنتجات المضافة من الواجهة الخلفية باستخدام axios/api.js
+    api.get('/api/products')
+      .then((res) => {
+        const data = res.data;
+        console.log('API /api/products response:', data);
         if (Array.isArray(data)) {
           setProducts(data);
         } else if (data && Array.isArray(data.value)) {
           setProducts(data.value);
+        } else if (data && Array.isArray(data.products)) {
+          setProducts(data.products);
+        } else if (data && Array.isArray(data.results)) {
+          setProducts(data.results);
         } else {
           setProducts([]);
         }
