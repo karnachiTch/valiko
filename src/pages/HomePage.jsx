@@ -161,6 +161,7 @@ export default function HomePage() {
     fetch(apiUrl)
       .then((res) => res.json())
       .then((data) => {
+        console.log('API /api/products response:', data); // لعرض البيانات القادمة من الواجهة الخلفية
         // backend sometimes returns { value: [...] } or the array directly
         if (Array.isArray(data)) {
           setProducts(data);
