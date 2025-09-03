@@ -138,6 +138,7 @@ const HowItWorksSection = () => {
   );
 };
 import React, { useEffect, useState, useRef } from "react";
+import { MdLocalShipping, MdAccountBalanceWallet, MdGroups, MdHeadsetMic } from "react-icons/md";
 import LoginForm from "./login-screen/components/LoginForm";
 import { useNavigate } from "react-router-dom";
 import { PaperAirplaneIcon } from "@heroicons/react/24/solid";
@@ -492,25 +493,8 @@ export default function HomePage() {
           {/* Guaranteed delivery */}
           <div className="p-6 bg-white rounded-lg shadow flex flex-col items-center">
             <div className="w-28 h-28 flex items-center justify-center rounded-full bg-gradient-to-tr from-blue-400 via-sky-300 to-blue-100 mb-4">
-              {/* Attractive Delivery Icon (3D/Gradient Style) */}
-              <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                  <linearGradient id="boxGradient" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-                    <stop stopColor="#4F8CFF"/>
-                    <stop offset="1" stopColor="#A5D8FF"/>
-                  </linearGradient>
-                  <linearGradient id="shadowGradient" x1="0" y1="64" x2="64" y2="0" gradientUnits="userSpaceOnUse">
-                    <stop stopColor="#1976D2"/>
-                    <stop offset="1" stopColor="#90CAF9"/>
-                  </linearGradient>
-                </defs>
-                <rect x="12" y="24" width="40" height="24" rx="8" fill="url(#boxGradient)"/>
-                <rect x="20" y="16" width="24" height="16" rx="6" fill="#fff" stroke="#4F8CFF" strokeWidth="2"/>
-                <rect x="24" y="20" width="16" height="8" rx="4" fill="#A5D8FF"/>
-                <ellipse cx="32" cy="52" rx="16" ry="4" fill="url(#shadowGradient)" opacity="0.3"/>
-                <path d="M32 16v-4" stroke="#4F8CFF" strokeWidth="2" strokeLinecap="round"/>
-                <circle cx="32" cy="16" r="2" fill="#4F8CFF"/>
-              </svg>
+              {/* أيقونة توصيل مضمون */}
+              <MdLocalShipping className="text-blue-500" style={{ fontSize: 64 }} />
             </div>
             <p className="font-semibold text-lg mb-2">Guaranteed delivery</p>
             <p className="text-gray-500 text-sm">If a traveler cancels your order or delivers an item in bad condition, we will issue a full refund and aim to match you with a new traveler.</p>
@@ -519,19 +503,8 @@ export default function HomePage() {
           {/* No Hidden Fees */}
           <div className="p-6 bg-white rounded-lg shadow flex flex-col items-center">
             <div className="w-28 h-28 flex items-center justify-center rounded-full bg-gradient-to-tr from-pink-400 via-fuchsia-300 to-pink-100 mb-4">
-              {/* Attractive Wallet Icon (Gradient/Line Style) */}
-              <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                  <linearGradient id="walletGradient" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-                    <stop stopColor="#F472B6"/>
-                    <stop offset="1" stopColor="#C4B5FD"/>
-                  </linearGradient>
-                </defs>
-                <rect x="14" y="26" width="36" height="20" rx="8" fill="url(#walletGradient)"/>
-                <rect x="20" y="32" width="24" height="10" rx="5" fill="#fff" stroke="#F472B6" strokeWidth="2"/>
-                <circle cx="44" cy="37" r="2" fill="#F472B6"/>
-                <rect x="24" y="22" width="16" height="6" rx="3" fill="#C4B5FD"/>
-              </svg>
+              {/* أيقونة محفظة/رسوم */}
+              <MdAccountBalanceWallet className="text-pink-500" style={{ fontSize: 64 }} />
             </div>
             <p className="font-semibold text-lg mb-2">No Hidden Fees</p>
             <p className="text-gray-500 text-sm">We calculate all applicable taxes and fees before you publish your order, so you know exactly how much you are paying.</p>
@@ -539,21 +512,8 @@ export default function HomePage() {
           {/* Community of Verified Shoppers and Travelers */}
           <div className="p-6 bg-white rounded-lg shadow flex flex-col items-center">
             <div className="w-28 h-28 flex items-center justify-center rounded-full bg-gradient-to-tr from-green-400 via-emerald-300 to-green-100 mb-4">
-              {/* Attractive Community Icon (Gradient/Line Style) */}
-              <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                  <linearGradient id="communityGradient" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-                    <stop stopColor="#34D399"/>
-                    <stop offset="1" stopColor="#6EE7B7"/>
-                  </linearGradient>
-                </defs>
-                <ellipse cx="32" cy="52" rx="16" ry="6" fill="url(#communityGradient)" opacity="0.3"/>
-                <circle cx="32" cy="28" r="8" fill="url(#communityGradient)" stroke="#34D399" strokeWidth="2"/>
-                <circle cx="20" cy="44" r="6" fill="#fff" stroke="#34D399" strokeWidth="2"/>
-                <circle cx="44" cy="44" r="6" fill="#fff" stroke="#34D399" strokeWidth="2"/>
-                <rect x="26" y="36" width="12" height="8" rx="4" fill="#6EE7B7"/>
-                <path d="M18 50c0-4 4-6 8-6h12c4 0 8 2 8 6" stroke="#34D399" strokeWidth="2" strokeLinecap="round" fill="none"/>
-              </svg>
+              {/* أيقونة مجتمع */}
+              <MdGroups className="text-green-500" style={{ fontSize: 64 }} />
             </div>
             <p className="font-semibold text-lg mb-2">Community of Verified Shoppers and Travelers</p>
             <p className="text-gray-500 text-sm">Trust is our top priority, and we work hard to ensure that our community treats all members with the utmost respect.</p>
@@ -561,23 +521,8 @@ export default function HomePage() {
           {/* 24/7 Customer Care */}
           <div className="p-6 bg-white rounded-lg shadow flex flex-col items-center col-span-1 md:col-span-3 mx-auto" style={{maxWidth:'400px'}}>
             <div className="w-28 h-28 flex items-center justify-center rounded-full bg-gradient-to-tr from-purple-400 via-indigo-300 to-purple-100 mb-4">
-              {/* Attractive Headset Icon (Gradient/Modern Style) */}
-              <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                  <linearGradient id="headsetGradient" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-                    <stop stopColor="#A78BFA"/>
-                    <stop offset="1" stopColor="#818CF8"/>
-                  </linearGradient>
-                </defs>
-                <ellipse cx="32" cy="54" rx="18" ry="6" fill="url(#headsetGradient)" opacity="0.2"/>
-                <rect x="16" y="32" width="32" height="16" rx="8" fill="url(#headsetGradient)"/>
-                <rect x="24" y="20" width="16" height="16" rx="8" fill="#fff" stroke="#A78BFA" strokeWidth="2"/>
-                <rect x="20" y="48" width="8" height="6" rx="3" fill="#818CF8"/>
-                <rect x="36" y="48" width="8" height="6" rx="3" fill="#818CF8"/>
-                <rect x="28" y="36" width="8" height="6" rx="3" fill="#A78BFA"/>
-                <path d="M16 40v-4a16 16 0 0132 0v4" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round" fill="none"/>
-                <circle cx="32" cy="28" r="4" fill="#A78BFA"/>
-              </svg>
+              {/* أيقونة دعم العملاء */}
+              <MdHeadsetMic className="text-purple-500" style={{ fontSize: 64 }} />
             </div>
             <p className="font-semibold text-lg mb-2">24/7 Customer Care</p>
             <p className="text-gray-500 text-sm text-center">Our dedicated team is on hand to resolve any issue that arises throughout the order and delivery process.</p>
