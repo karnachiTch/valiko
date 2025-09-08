@@ -1,38 +1,35 @@
 // نقطة موحدة لطلبات API
 import axios from 'axios';
 
-const resolvedBase = (typeof process !== 'undefined' && process?.env?.VITE_API_BASE) || localStorage.getItem('API_BASE') || 'http://localhost:8000';
+// استخدم متغير البيئة العام المناسب في مشاريع Vercel/Next.js (يجب أن يبدأ بـ NEXT_PUBLIC)
+const resolvedBase =
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_BASE) ||
+  localStorage.getItem('API_BASE') ||
+  'http://localhost:8000';
+
 const api = axios.create({
-  baseURL: resolvedBase, // FastAPI backend (configurable via VITE_API_BASE or localStorage.API_BASE)
+  baseURL: resolvedBase, // FastAPI backend (يتم ضبطه عبر متغير بيئة أو localStorage)
 });
 
-// Safety: ensure axios does not set a default Content-Type globally.
-// This prevents form-encoded login requests from becoming non-simple (which triggers preflight).
-if (api.defaults && api.defaults.headers) {
-  try {
-    delete api.defaults.headers['Content-Type'];
-  } catch (e) {}
-  try {
-    if (api.defaults.headers.common) delete api.defaults.headers.common['Content-Type'];
-  } catch (e) {}
-  try {
-    if (api.defaults.headers.post) delete api.defaults.headers.post['Content-Type'];
-  } catch (e) {}
-}
+// لا تقم بتغيير Content-Type افتراضياً على مستوى global إلا إذا كان ذلك ضرورياً لحل مشكلة محددة
+// الأفضل ترك Content-Type ليتم ضبطه تلقائياً بناءً على نوع البيانات المرسلة
 
-// إضافة التوكن تلقائيًا في جميع الطلبات
-api.interceptors.request.use((config) => {
-  // don't attach Authorization header for login route to avoid preflight/405
-  const fullUrl = `${config.baseURL || ''}${config.url || ''}`;
-  if (fullUrl.includes('/api/auth/login')) {
+// إضافة الهيدر Authorization تلقائياً في جميع الطلبات فيما عدا تسجيل الدخول
+api.interceptors.request.use(
+  (config) => {
+    const fullUrl = `${config.baseURL || ''}${config.url || ''}`;
+    if (fullUrl.includes('/api/auth/login')) {
+      // عدم إضافة Authorization في طلب الدخول
+      return config;
+    }
+    const token = localStorage.getItem('accessToken');
+    if (token) {
+      config.headers = config.headers || {};
+      config.headers['Authorization'] = `Bearer ${token}`;
+    }
     return config;
-  }
-  const token = localStorage.getItem('accessToken');
-  if (token) {
-    config.headers = config.headers || {};
-    config.headers['Authorization'] = `Bearer ${token}`;
-  }
-  return config;
-}, (error) => Promise.reject(error));
+  },
+  (error) => Promise.reject(error)
+);
 
 export default api;
