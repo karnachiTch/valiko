@@ -146,8 +146,22 @@ const HowItWorksContent = ({ steps }) => (
 );
 
 export default function HomePage() {
-  // دالة تحديث المنتجات بعد أي عملية (رفض/قبول)
-  const refreshProducts = () => {
+  // جلب جميع المنتجات والطلبات عند التحميل الأول
+  const [products, setProducts] = useState([]);
+  const [buyerRequests, setBuyerRequests] = useState([]);
+  const [displayedBuyerRequests, setDisplayedBuyerRequests] = useState([]);
+  const [buyerPageIndex, setBuyerPageIndex] = useState(1);
+  const [buyerItemsPerPage] = useState(3);
+  const [showLogin, setShowLogin] = useState(false);
+  const navigate = useNavigate();
+  const [displayedProducts, setDisplayedProducts] = useState([]);
+  const [itemsPerPage] = useState(6);
+  const [pageIndex, setPageIndex] = useState(1);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    // جلب المنتجات
     api.get('/api/products')
       .then((res) => {
         const data = res.data;
@@ -164,21 +178,41 @@ export default function HomePage() {
         }
       })
       .catch(() => setProducts([]));
-  };
-  const [products, setProducts] = useState([]);
-  const [showLogin, setShowLogin] = useState(false);
-  const navigate = useNavigate();
-  // For mobile incremental loading (scroll-to-load)
-  const [displayedProducts, setDisplayedProducts] = useState([]);
-  const [itemsPerPage] = useState(6);
-  const [pageIndex, setPageIndex] = useState(1);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const containerRef = useRef(null);
-
-  useEffect(() => {
-  // جلب جميع المنتجات عند التحميل الأول
-  refreshProducts();
+    // جلب طلبيات المشترين فقط
+    api.get('/api/requests?type=buyer_request')
+      .then((res) => {
+        const data = res.data;
+        if (Array.isArray(data)) {
+          setBuyerRequests(data);
+        } else if (data && Array.isArray(data.requests)) {
+          setBuyerRequests(data.requests);
+        } else {
+          setBuyerRequests([]);
+        }
+      })
+      .catch(() => setBuyerRequests([]));
   }, []);
+
+  // initialize displayedBuyerRequests when buyerRequests are loaded
+  useEffect(() => {
+    setBuyerPageIndex(1);
+    if (Array.isArray(buyerRequests) && buyerRequests.length > 0) {
+      const shuffled = [...buyerRequests].sort(() => 0.5 - Math.random());
+      setDisplayedBuyerRequests(shuffled.slice(0, buyerItemsPerPage));
+    } else {
+      setDisplayedBuyerRequests([]);
+    }
+  }, [buyerRequests]);
+
+  // تغيير الطلبيات تلقائياً كل 10 ثواني
+  useEffect(() => {
+    if (!Array.isArray(buyerRequests) || buyerRequests.length === 0) return;
+    const interval = setInterval(() => {
+      const shuffled = [...buyerRequests].sort(() => 0.5 - Math.random());
+      setDisplayedBuyerRequests(shuffled.slice(0, buyerItemsPerPage));
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [buyerRequests]);
 
   // initialize displayedProducts when products are loaded
   useEffect(() => {
@@ -295,153 +329,162 @@ export default function HomePage() {
         />
       </section>
 
-      {/* Available Products */}
-<section className="px-8 py-12">
-  <h3 className="text-center text-5xl font-bold mb-8">
-    Processed Orders
-  </h3>
-  <div
-    ref={containerRef}
-    className="px-4 pb-4 md:pb-0 relative scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
-    style={{
-      WebkitOverflowScrolling: 'touch',
-      display: window.innerWidth < 768 ? 'block' : 'grid',
-      gridTemplateColumns: window.innerWidth >= 768 ? 'repeat(3, 1fr)' : 'unset',
-      gap: '1rem',
-    }}
-  >
-    {/* في وضع الهاتف والشاشات الصغيرة تظهر البطاقات بشكل عادي (block)، وفي الشاشات الكبيرة تظهر بشكل شبكة (grid) */}
-    {displayedProducts?.length > 0 ? (
-      displayedProducts.map((order, i) => {
-        const id = order.id || order._id || i;
-        return (
-          <div
-            key={id}
-            onClick={() => {
-              if (typeof window !== 'undefined' && window.innerWidth < 768) {
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-                setTimeout(() => navigate(`/product-detail-view/${id}`), 300);
-                return;
-              }
-              navigate(`/product-detail-view/${id}`);
-            }}
-            className="bg-white rounded-xl shadow-lg hover:shadow-2xl transition-transform duration-300 transform hover:scale-105 overflow-hidden cursor-pointer w-full min-w-[240px] max-w-xs md:max-w-sm md:mx-auto mx-auto mb-6 border border-gray-100 relative group"
-          >
-            {/* شارة حالة المنتج */}
-            <span className="absolute top-3 left-3 bg-gradient-to-r from-blue-500 via-sky-400 to-blue-300 text-white text-xs font-bold px-3 py-1 rounded-full shadow-md z-10">
-              {order.status === 'fulfilled' ? 'Fulfilled' : order.status === 'available' ? 'Available' : 'Active'}
-            </span>
-            {/* صورة المنتج */}
-            <div className="flex justify-center items-center bg-gradient-to-tr from-gray-100 via-blue-50 to-gray-200 p-4">
-              <img
-                loading="lazy"
-                src={(() => {
-                  const img = order.image || (order.images && order.images[0]);
-                  if (!img) return '/assets/images/no_image.png';
-                  if (typeof img === 'string') return img;
-                  if (img.url) return img.url;
-                  if (img.file && img.file.url) return img.file.url;
-                  return '/assets/images/no_image.png';
-                })()}
-                alt={order.title || order.name || "Order"}
-                onError={(e) => { e.currentTarget.src = '/assets/images/no_image.png'; }}
-                className="w-32 h-32 object-cover rounded-2xl border-4 border-blue-200 group-hover:border-blue-400 transition-all duration-300 shadow-md"
-              />
-            </div>
-            {/* بيانات المسافر والمشتري */}
-            <div className="flex justify-around items-center py-4 gap-2 bg-gradient-to-r from-white via-blue-50 to-white">
-              {/* المسافر */}
-              <div className="flex flex-col items-center">
-                <div className="w-16 h-16 rounded-full border-4 border-sky-300 bg-white flex items-center justify-center shadow group-hover:border-blue-500 transition-all duration-300">
+
+      {/* Recent Orders - Buyer Requests Only (rotating cards) */}
+      <section className="px-8 py-12">
+        <h3 className="text-center text-5xl font-bold mb-8">Recent Orders</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {displayedBuyerRequests.length > 0 ? displayedBuyerRequests.map((req, i) => {
+            const id = req._id || req.id || i;
+            return (
+              <div key={id} className="bg-yellow-50 border border-yellow-200 rounded-xl shadow-lg p-6 flex flex-col gap-4 animate-fade-in">
+                <div className="flex items-center gap-3 mb-2">
                   <img
-                    loading="lazy"
-                    src={order.travelerAvatar || order.traveler?.avatar || '/assets/images/no_image.png'}
-                    alt={order.travelerName || order.traveler?.name || "Traveler"}
-                    onError={(e) => { e.currentTarget.src = '/assets/images/no_image.png'; }}
-                    className="w-14 h-14 rounded-full object-cover"
+                    src={typeof req.image === 'string' && req.image.match(/^([A-Za-z0-9+/=]+)$/) && req.image.length > 100 ? `data:image/jpeg;base64,${req.image}` : req.image || '/assets/images/no_image.png'}
+                    alt={req.product_name || 'Product'}
+                    className="w-20 h-20 object-cover rounded-xl border-2 border-yellow-300 shadow"
+                    onError={e => { e.target.onerror=null; e.target.src='/assets/images/no_image.png'; }}
                   />
+                  <div>
+                    <div className="font-bold text-lg text-yellow-800">{req.product_name}</div>
+                    <div className="text-sm text-gray-500">{req.category}</div>
+                  </div>
                 </div>
-                <span className="mt-2 px-3 py-1 text-white text-xs rounded-full bg-gradient-to-r from-blue-400 to-blue-600 shadow">
-                  earned ${order.travelerEarnings || order.traveler?.earnings || 0}
-                </span>
-                <p className="mt-2 font-semibold text-blue-700 text-sm">
-                  {order.travelerName || order.traveler?.fullName || order.traveler?.name || order.traveler?.email || "Traveler"}
-                </p>
-                <p className="text-gray-500 text-xs">
-                  {order.traveler?.location || order.travelerLocation || order.traveler_user?.location || order.traveler?.profileLocation || "No location"}
-                </p>
-              </div>
-              {/* أيقونة الطائرة */}
-              <PaperAirplaneIcon className="h-7 w-7 text-blue-400 group-hover:text-blue-600 transition-transform duration-300 rotate-45" />
-              {/* المشتري */}
-              <div className="flex flex-col items-center">
-                <div className="w-16 h-16 rounded-full border-4 border-green-300 bg-white flex items-center justify-center shadow group-hover:border-green-500 transition-all duration-300">
-                  <img
-                    loading="lazy"
-                    src={order.buyerAvatar || order.buyer?.avatar || '/assets/images/no_image.png'}
-                    alt={order.buyerName || order.buyer?.fullName || order.buyer?.name || order.buyer?.email || "Buyer"}
-                    onError={(e) => { e.currentTarget.src = '/assets/images/no_image.png'; }}
-                    className="w-14 h-14 rounded-full object-cover"
-                  />
+                <div className="flex flex-col gap-1">
+                  <span className="text-gray-700 font-semibold">Description:</span>
+                  <span className="text-gray-600">{req.description}</span>
                 </div>
-                <span className="mt-2 px-3 py-1 text-white text-xs rounded-full bg-gradient-to-r from-green-400 to-green-600 shadow">
-                  saved ${order.buyerSavings || order.buyer?.savings || 0}
-                </span>
-                <p className="mt-2 font-semibold text-green-700 text-sm">
-                  {order.buyerName || order.buyer?.fullName || order.buyer?.name || order.buyer?.email || "Buyer"}
-                </p>
-                <p className="text-gray-500 text-xs">
-                  {order.buyer?.location || order.buyerLocation || "No location"}
-                </p>
-              </div>
-            </div>
-            {/* اسم المنتج والسعر */}
-            {/*
-            <div className="p-4 border-t bg-white">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h4 className="font-semibold text-lg text-gray-800">{order.name || order.title || 'Product'}</h4>
-                  <p className="text-sm text-gray-500 mt-1">{order.description || ''}</p>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-gray-700">Quantity:</span>
+                  <span className="text-yellow-700 font-bold">{req.quantity}</span>
                 </div>
-                <div className="text-right">
-                  <div className="text-xl font-bold text-blue-600">{order.currency || '$'}{order.price ?? 0}</div>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-gray-700">Request Type:</span>
+                  <span className="text-yellow-600 font-bold">Buyer</span>
                 </div>
               </div>
-              <div className="mt-4 flex justify-end gap-2">
-                <button
-                  onClick={(e) => { e.stopPropagation(); if (typeof window !== 'undefined' && window.innerWidth < 768) { window.scrollTo({ top: 0, behavior: 'smooth' }); setTimeout(() => navigate(`/product-detail-view/${id}`), 300); return; } navigate(`/product-detail-view/${id}`); }}
-                  className="px-4 py-2 text-sm border rounded-lg hover:bg-blue-50 text-blue-600 font-semibold transition"
+            );
+          }) : (
+            <div className="text-center text-muted-foreground col-span-3">No buyer requests found.</div>
+          )}
+        </div>
+      </section>
+
+      {/* Processed Orders - Traveler Products Only */}
+      <section className="px-8 py-12">
+        <h3 className="text-center text-5xl font-bold mb-8">Processed Orders</h3>
+        <div
+          ref={containerRef}
+          className="px-4 pb-4 md:pb-0 relative scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
+          style={{
+            WebkitOverflowScrolling: 'touch',
+            display: window.innerWidth < 768 ? 'block' : 'grid',
+            gridTemplateColumns: window.innerWidth >= 768 ? 'repeat(3, 1fr)' : 'unset',
+            gap: '1rem',
+          }}
+        >
+          {displayedProducts?.length > 0 ? (
+            displayedProducts.filter(order => order.type !== 'buyer_request').map((order, i) => {
+              const id = order.id || order._id || i;
+              return (
+                <div
+                  key={id}
+                  onClick={() => {
+                    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                      setTimeout(() => navigate(`/product-detail-view/${id}`), 300);
+                      return;
+                    }
+                    navigate(`/product-detail-view/${id}`);
+                  }}
+                  className="bg-white rounded-xl shadow-lg hover:shadow-2xl transition-transform duration-300 transform hover:scale-105 overflow-hidden cursor-pointer w-full min-w-[240px] max-w-xs md:max-w-sm md:mx-auto mx-auto mb-6 border border-gray-100 relative group"
                 >
-                  View
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); if (typeof window !== 'undefined' && window.innerWidth < 768) { window.scrollTo({ top: 0, behavior: 'smooth' }); setTimeout(() => navigate(`/product-detail-view/${id}`, { state: { action: 'request' } }), 300); return; } navigate(`/product-detail-view/${id}`, { state: { action: 'request' } }); }}
-                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold transition"
-                >
-                  Request
-                </button>
-              </div>
-            </div>*/}
+                  {/* شارة حالة المنتج */}
+                  <span className="absolute top-3 left-3 bg-gradient-to-r from-blue-500 via-sky-400 to-blue-300 text-white text-xs font-bold px-3 py-1 rounded-full shadow-md z-10">
+                    {order.status === 'fulfilled' ? 'Fulfilled' : order.status === 'available' ? 'Available' : 'Active'}
+                  </span>
+                  {/* صورة المنتج */}
+                  <div className="flex justify-center items-center bg-gradient-to-tr from-gray-100 via-blue-50 to-gray-200 p-4">
+                    <img
+                      loading="lazy"
+                      src={(() => {
+                        const img = order.image || (order.images && order.images[0]);
+                        if (!img) return '/assets/images/no_image.png';
+                        if (typeof img === 'string') return img;
+                        if (img.url) return img.url;
+                        if (img.file && img.file.url) return img.file.url;
+                        return '/assets/images/no_image.png';
+                      })()}
+                      alt={order.title || order.name || "Order"}
+                      onError={(e) => { e.currentTarget.src = '/assets/images/no_image.png'; }}
+                      className="w-32 h-32 object-cover rounded-2xl border-4 border-blue-200 group-hover:border-blue-400 transition-all duration-300 shadow-md"
+                    />
+                  </div>
+                  {/* بيانات المسافر والمشتري */}
+                  <div className="flex justify-around items-center py-4 gap-2 bg-gradient-to-r from-white via-blue-50 to-white">
+                    {/* المسافر */}
+                    <div className="flex flex-col items-center">
+                      <div className="w-16 h-16 rounded-full border-4 border-sky-300 bg-white flex items-center justify-center shadow group-hover:border-blue-500 transition-all duration-300">
+                        <img
+                          loading="lazy"
+                          src={order.travelerAvatar || order.traveler?.avatar || '/assets/images/no_image.png'}
+                          alt={order.travelerName || order.traveler?.name || "Traveler"}
+                          onError={(e) => { e.currentTarget.src = '/assets/images/no_image.png'; }}
+                          className="w-14 h-14 rounded-full object-cover"
+                        />
+                      </div>
+                      <span className="mt-2 px-3 py-1 text-white text-xs rounded-full bg-gradient-to-r from-blue-400 to-blue-600 shadow">
+                        earned ${order.travelerEarnings || order.traveler?.earnings || 0}
+                      </span>
+                      <p className="mt-2 font-semibold text-blue-700 text-sm">
+                        {order.travelerName || order.traveler?.fullName || order.traveler?.name || order.traveler?.email || "Traveler"}
+                      </p>
+                      <p className="text-gray-500 text-xs">
+                        {order.traveler?.location || order.travelerLocation || order.traveler_user?.location || order.traveler?.profileLocation || "No location"}
+                      </p>
+                    </div>
+                    {/* أيقونة الطائرة */}
+                    <PaperAirplaneIcon className="h-7 w-7 text-blue-400 group-hover:text-blue-600 transition-transform duration-300 rotate-45" />
+                    {/* المشتري */}
+                    <div className="flex flex-col items-center">
+                      <div className="w-16 h-16 rounded-full border-4 border-green-300 bg-white flex items-center justify-center shadow group-hover:border-green-500 transition-all duration-300">
+                        <img
+                          loading="lazy"
+                          src={order.buyerAvatar || order.buyer?.avatar || '/assets/images/no_image.png'}
+                          alt={order.buyerName || order.buyer?.fullName || order.buyer?.name || order.buyer?.email || "Buyer"}
+                          onError={(e) => { e.currentTarget.src = '/assets/images/no_image.png'; }}
+                          className="w-14 h-14 rounded-full object-cover"
+                        />
+                      </div>
+                      <span className="mt-2 px-3 py-1 text-white text-xs rounded-full bg-gradient-to-r from-green-400 to-green-600 shadow">
+                        saved ${order.buyerSavings || order.buyer?.savings || 0}
+                      </span>
+                      <p className="mt-2 font-semibold text-green-700 text-sm">
+                        {order.buyerName || order.buyer?.fullName || order.buyer?.name || order.buyer?.email || "Buyer"}
+                      </p>
+                      <p className="text-gray-500 text-xs">
+                        {order.buyer?.location || order.buyerLocation || "No location"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="text-center text-muted-foreground col-span-3">No completed orders found.</div>
+          )}
+          {/* Scroll Indicator (mobile only) */}
+          <div className="md:hidden w-full absolute left-0 -bottom-2 flex justify-center pointer-events-none">
+            <div className="h-2 w-24 bg-gray-300 rounded-full opacity-70 animate-pulse" />
           </div>
-        );
-      })
-    ) : (
-      <div className="text-center text-muted-foreground col-span-3">
-        No completed orders found.
-      </div>
-    )}
-    {/* Scroll Indicator (mobile only) */}
-    <div className="md:hidden w-full absolute left-0 -bottom-2 flex justify-center pointer-events-none">
-      <div className="h-2 w-24 bg-gray-300 rounded-full opacity-70 animate-pulse" />
-    </div>
-  </div>
-  {/* Mobile loading indicator */}
-  {typeof window !== 'undefined' && window.innerWidth < 768 && isLoadingMore && (
-    <div className="w-full flex justify-center mt-2">
-      <div className="px-3 py-1 text-sm text-muted-foreground bg-gray-100 rounded">Loading more...</div>
-    </div>
-  )}
-</section>
+        </div>
+        {/* Mobile loading indicator */}
+        {typeof window !== 'undefined' && window.innerWidth < 768 && isLoadingMore && (
+          <div className="w-full flex justify-center mt-2">
+            <div className="px-3 py-1 text-sm text-muted-foreground bg-gray-100 rounded">Loading more...</div>
+          </div>
+        )}
+      </section>
 
   
   <HowItWorksSection />
