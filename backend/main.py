@@ -329,17 +329,18 @@ async def create_buyer_request(
 
 from fastapi import Request
 @app.get("/api/requests")
-async def get_requests(request: Request, current_user: dict = Depends(get_current_user)):
-    user_id = str(current_user["_id"])
-    role = current_user.get("role") or current_user.get("userRole")
+async def get_requests(request: Request, current_user: dict = None):
     product_id = request.query_params.get("product_id")
     req_type = request.query_params.get("type")
     query = {"status": "pending"}
-    # إذا كان المستخدم Buyer جلب الطلبات عبر buyer_id، إذا كان Traveler جلبها عبر traveler_id
-    if role == "buyer":
-        query["buyer_id"] = user_id
-    elif role == "traveler":
-        query["traveler_id"] = user_id
+    # إذا لم يوجد مستخدم أو لم يتم التوثيق، اعرض جميع طلبات المشترين
+    if current_user:
+        user_id = str(current_user["_id"])
+        role = current_user.get("role") or current_user.get("userRole")
+        if role == "buyer":
+            query["buyer_id"] = user_id
+        elif role == "traveler":
+            query["traveler_id"] = user_id
     if product_id:
         query["product_id"] = product_id
     if req_type:
