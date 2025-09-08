@@ -215,7 +215,7 @@ const TravelerDashboard = () => {
           {/* Header Section */}
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-2xl font-bold text-foreground">Welcome back, {user?.fullName || 'Traveler'}!</h1>
+              <h1 className="text-2xl font-bold text-foreground">Welcome back, {user?.fullName || ''}!</h1>
               <p className="text-muted-foreground">Manage your listings and upcoming trips</p>
             </div>
             <Button
@@ -326,12 +326,12 @@ const TravelerDashboard = () => {
                         <div className="flex flex-col">
                           <span className="font-semibold text-base text-foreground">{request?.buyerName || request?.buyer_id || `Request #${idx + 1}`}</span>
                           {request?.message && <span className="text-xs text-muted-foreground mb-1">{request.message}</span>}
-                          {request?.quantity && <span className="text-xs text-muted-foreground">الكمية: {request.quantity}</span>}
+                          {request?.quantity && <span className="text-xs text-muted-foreground"> {request.quantity}</span>}
                         </div>
                         <div className="flex flex-row flex-wrap gap-2 justify-end">
                           <Button size="sm" variant="outline" onClick={() => {
                             const details = `اسم المشتري: ${request?.buyerName || ''}\n` +
-                              `الكمية: ${request?.quantity || ''}\n` +
+                              `: ${request?.quantity || ''}\n` +
                               (request?.message ? `ملاحظة: ${request.message}\n` : '') +
                               `رقم الطلب: ${request?.id || request?._id || ''}`;
                             alert(details);

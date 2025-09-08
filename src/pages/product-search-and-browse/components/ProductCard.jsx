@@ -146,11 +146,11 @@ const ProductCard = ({ product, onSave, onRequest }) => {
                 </div>
                 <div className="flex items-center gap-2">
                   <Icon name="Tag" size={15} className="text-gray-500" />
-                  <span className="text-sm text-gray-700">الفئة: {product?.category}</span>
+                  <span className="text-sm text-gray-700">{product?.category}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Icon name="Layers" size={15} className="text-gray-500" />
-                  <span className="text-sm text-gray-700">الكمية: {product?.quantity}</span>
+                  <span className="text-sm text-gray-700"> {product?.quantity}</span>
                 </div>
               </div>
             </div>
@@ -195,7 +195,7 @@ const ProductCard = ({ product, onSave, onRequest }) => {
               </div>
               <div className="flex items-center gap-2 text-sm text-gray-500">
                 <Icon name="Package" size={15} />
-                <span>{product?.quantity} متوفر</span>
+                <span>{product?.quantity}</span>
               </div>
             </div>
           </>
@@ -234,7 +234,7 @@ const ProductCard = ({ product, onSave, onRequest }) => {
                 }
               }}
             >
-              عرض التفاصيل
+              View Details
             </Button>
             {/* زر تعديل الطلب يظهر فقط لصاحب الطلب */}
             {/* زر تعديل الطلب يظهر فقط لصاحب الطلب */}

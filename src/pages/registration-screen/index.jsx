@@ -167,8 +167,16 @@ const RegistrationScreen = () => {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 transition-colors duration-500">
       <div className="absolute inset-0 z-0 bg-[url('/public/assets/images/no_image.png')] bg-cover bg-center opacity-10 pointer-events-none" />
       <div className="relative z-10 w-full max-w-2xl mx-auto px-4 py-10">
-  {/* تم حذف الشريط العلوي وزر العودة العلوي بناءً على طلب المستخدم */}
         <div className="bg-white/80 dark:bg-gray-900/80 rounded-3xl shadow-2xl p-8 lg:p-12 backdrop-blur-md border border-gray-200 dark:border-gray-800">
+          <div className="flex justify-end mb-2">
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-sm font-semibold"
+            >
+              <Icon name="Home" size={18} /> Home
+            </button>
+          </div>
           <ProgressIndicator currentStep={currentStep} totalSteps={totalSteps} />
           <div className="mt-8">
             {renderStepContent()}
@@ -186,8 +194,9 @@ const RegistrationScreen = () => {
               onClick={handleNext}
               loading={isLoading}
               disabled={isLoading}
-              className="sm:ml-auto sm:w-auto px-8 py-3 rounded-lg text-base font-bold shadow-lg bg-gradient-to-r from-primary to-pink-500 hover:from-pink-500 hover:to-primary transition-all"
+              className="sm:ml-auto sm:w-auto px-8 py-3 rounded-full text-lg font-extrabold shadow-lg bg-gradient-to-r from-blue-500 via-pink-400 to-pink-500 hover:from-pink-500 hover:to-blue-500 transition-all flex items-center justify-center gap-2"
             >
+              <Icon name={currentStep === totalSteps ? 'UserPlus' : 'ArrowRight'} size={20} />
               {currentStep === totalSteps ? 'Create Account' : 'Next'}
             </Button>
           </div>

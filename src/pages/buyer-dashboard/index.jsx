@@ -126,7 +126,7 @@ const BuyerDashboard = () => {
             {/* Welcome Section */}
             <div className="relative rounded-2xl overflow-hidden border border-border shadow-lg bg-gradient-to-br from-blue-100 via-white/60 to-blue-50 backdrop-blur-md py-10 px-8 flex flex-col md:flex-row items-center justify-between gap-8">
               <div className="flex flex-col items-start gap-2">
-                <h1 className="text-3xl md:text-4xl font-extrabold text-gray-900 drop-shadow-lg">Welcome back, {user?.fullName || 'Traveler'}!</h1>
+                <h1 className="text-3xl md:text-4xl font-extrabold text-gray-900 drop-shadow-lg">Welcome back, {user?.fullName || ''}!</h1>
               </div>
               <div className="flex flex-col items-center gap-2">
                 <button

@@ -131,6 +131,15 @@ const LoginForm = () => {
 
   return (
     <div className="w-full max-w-md mx-auto">
+        <div className="flex justify-end mb-2">
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-sm font-semibold"
+          >
+            <Icon name="Home" size={18} /> Home
+          </button>
+        </div>
       <div className="bg-card rounded-lg border border-border p-6 shadow-card">
         <div className="text-center mb-6">
           <h2 className="text-2xl font-bold text-gray-800">Welcome Back</h2>

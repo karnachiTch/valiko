@@ -85,7 +85,7 @@ const CreateProductRequestForm = ({ onRequestCreated, onClose, initialData = nul
         <div className="flex flex-col items-center mb-3">
           <div className="flex items-center gap-2 mb-1">
           </div>
-          <h2 className="text-xl font-extrabold mb-1 text-center text-blue-800 tracking-tight">{editMode ? 'تعديل طلب المنتج' : 'طلب منتج جديد / New Product Request'}</h2>
+          <h2 className="text-xl font-extrabold mb-1 text-center text-blue-800 tracking-tight">{editMode ? 'Edit Product Order' : 'New Product Request'}</h2>
           <p className="text-gray-500 text-center mb-2 text-xs">Please fill all fields accurately for best experience.</p>
         </div>
         <div className="space-y-3">

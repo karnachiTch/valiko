@@ -155,8 +155,8 @@ export default function HomePage() {
   const [showLogin, setShowLogin] = useState(false);
   const navigate = useNavigate();
   const [displayedProducts, setDisplayedProducts] = useState([]);
-  const [itemsPerPage] = useState(6);
-  const [pageIndex, setPageIndex] = useState(1);
+  const [processedPageIndex, setProcessedPageIndex] = useState(1);
+  const [processedItemsPerPage] = useState(3);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const containerRef = useRef(null);
 
@@ -214,42 +214,42 @@ export default function HomePage() {
     return () => clearInterval(interval);
   }, [buyerRequests]);
 
-  // initialize displayedProducts when products are loaded
+  // initialize displayedProducts for processed (traveler) products
   useEffect(() => {
-    setPageIndex(1);
-    // اختيار 3 منتجات عشوائية في كل تحميل للصفحة
-    if (Array.isArray(products) && products.length > 0) {
-      // انسخ المصفوفة ثم اخلطها
-      const shuffled = [...products].sort(() => 0.5 - Math.random());
-      setDisplayedProducts(shuffled.slice(0, 3));
+    setProcessedPageIndex(1);
+    const travelerProducts = Array.isArray(products) ? products.filter(p => p.type !== 'buyer_request') : [];
+    if (travelerProducts.length > 0) {
+      const shuffled = [...travelerProducts].sort(() => 0.5 - Math.random());
+      setDisplayedProducts(shuffled.slice(0, processedItemsPerPage));
     } else {
       setDisplayedProducts([]);
     }
   }, [products]);
 
-  // تغيير المنتجات تلقائياً كل 10 ثواني
+  // تغيير المنتجات تلقائياً كل 10 ثواني (processed orders)
   useEffect(() => {
-    if (!Array.isArray(products) || products.length === 0) return;
+    const travelerProducts = Array.isArray(products) ? products.filter(p => p.type !== 'buyer_request') : [];
+    if (travelerProducts.length === 0) return;
     const interval = setInterval(() => {
-      // انسخ المصفوفة ثم اخلطها
-      const shuffled = [...products].sort(() => 0.5 - Math.random());
-      setDisplayedProducts(shuffled.slice(0, 3));
+      const shuffled = [...travelerProducts].sort(() => 0.5 - Math.random());
+      setDisplayedProducts(shuffled.slice(0, processedItemsPerPage));
     }, 10000);
     return () => clearInterval(interval);
   }, [products]);
 
   // load more function (appends next page)
+  // load more function (appends next page) - only used for mobile scroll, keep logic but use processedPageIndex
   const loadMore = () => {
     if (isLoadingMore) return;
     if (!Array.isArray(products)) return;
-    if (displayedProducts.length >= products.length) return;
+    const travelerProducts = products.filter(p => p.type !== 'buyer_request');
+    if (displayedProducts.length >= travelerProducts.length) return;
     setIsLoadingMore(true);
-    // simulate async load (can be immediate since we already have all data)
     setTimeout(() => {
-      const nextPage = pageIndex + 1;
-      const nextSlice = products.slice(0, nextPage * itemsPerPage);
+      const nextPage = processedPageIndex + 1;
+      const nextSlice = travelerProducts.slice(0, nextPage * processedItemsPerPage);
       setDisplayedProducts(nextSlice);
-      setPageIndex(nextPage);
+      setProcessedPageIndex(nextPage);
       setIsLoadingMore(false);
     }, 120);
   };
@@ -268,7 +268,7 @@ export default function HomePage() {
     };
     el.addEventListener('scroll', onScroll);
     return () => el.removeEventListener('scroll', onScroll);
-  }, [containerRef.current, displayedProducts, products, pageIndex]);
+  }, [containerRef.current, displayedProducts, products, processedPageIndex]);
 
   return (
     <div className="font-sans">
