@@ -101,18 +101,17 @@ const ProductSearchAndBrowse = () => {
   }, [filters, searchQuery, currentSort]);
 
   useEffect(() => {
-    // جلب بيانات المستخدم من API
-    const fetchUser = async () => {
+    // جلب بيانات المستخدم من /api/profile لتمرير avatar الحقيقي
+    const fetchProfile = async () => {
       try {
-        const res = await import('../../api').then(m => m.default.get('/api/auth/me'));
-  setUser(res.data);
-  const roleFromApi = res?.data?.role || res?.data?.userRole || localStorage.getItem('userRole');
-  setUserRole(roleFromApi || 'buyer');
+        const res = await import('../../api').then(m => m.default.get('/api/profile'));
+        setUser(res.data);
+        setUserRole(res?.data?.role || res?.data?.userRole || localStorage.getItem('userRole') || 'buyer');
       } catch (err) {
         setUser(null);
       }
     };
-    fetchUser();
+    fetchProfile();
   }, []);
   const [products, setProducts] = useState([]);
 

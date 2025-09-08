@@ -31,11 +31,12 @@ const BuyerRequestCard = ({ request, onAccept, onDecline, onViewProfile }) => {
     <div className="bg-card rounded-lg border border-border p-4 shadow-card">
       <div className="flex items-start space-x-3 mb-3">
         <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-          <Image
-            src={request?.buyer?.avatar}
-            alt={request?.buyer?.name}
-            className="w-full h-full object-cover"
-          />
+              <img
+                src={request?.buyer?.avatar || (request?.buyer?.fullName || request?.buyer?.name ? `https://ui-avatars.com/api/?name=${encodeURIComponent(request?.buyer?.fullName || request?.buyer?.name)}` : "https://ui-avatars.com/api/?name=Buyer") }
+                alt={request?.buyer?.name || "Buyer"}
+                className="w-full h-full object-cover"
+                onError={e => { e.target.onerror=null; e.target.src="https://ui-avatars.com/api/?name=Buyer"; }}
+              />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between mb-1">

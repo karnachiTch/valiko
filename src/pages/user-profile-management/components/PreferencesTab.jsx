@@ -2,23 +2,20 @@ import React, { useState } from 'react';
 import Input from '../../../components/ui/Input';
 import Button from '../../../components/ui/Button';
 
-const PreferencesTab = ({ userRole, onUpdate }) => {
-  const [currency, setCurrency] = useState('USD');
-  const [language, setLanguage] = useState('English');
-  const [timeZone, setTimeZone] = useState('America/New_York');
-  const [interests, setInterests] = useState(['Electronics', 'Fashion', 'Books']);
+const PreferencesTab = ({ userRole, onUpdate, profileData = {} }) => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [currency, setCurrency] = useState(profileData?.currency || 'USD');
+  const [language, setLanguage] = useState(profileData?.language || 'English');
+  const [timeZone, setTimeZone] = useState(profileData?.timeZone || 'America/New_York');
+  const [interests, setInterests] = useState(profileData?.interests || ['Electronics', 'Fashion', 'Books']);
   const [newInterest, setNewInterest] = useState('');
-  
-  // Traveler-specific preferences
-  const [travelerPrefs, setTravelerPrefs] = useState({
+  const [travelerPrefs, setTravelerPrefs] = useState(profileData?.travelerPrefs || {
     pickupAvailability: true,
     maxItemWeight: '5',
     preferredRegions: ['Europe', 'Asia'],
     transportMethods: ['Airplane', 'Train']
   });
-
-  // Buyer-specific preferences
-  const [buyerPrefs, setBuyerPrefs] = useState({
+  const [buyerPrefs, setBuyerPrefs] = useState(profileData?.buyerPrefs || {
     deliveryAddresses: [
       { id: 1, label: 'Home', address: '123 Main St, New York, NY 10001', default: true },
       { id: 2, label: 'Work', address: '456 Business Ave, New York, NY 10002', default: false }
@@ -26,6 +23,27 @@ const PreferencesTab = ({ userRole, onUpdate }) => {
     budgetRange: { min: 50, max: 500 },
     preferredCategories: ['Electronics', 'Fashion', 'Home & Garden']
   });
+
+  React.useEffect(() => {
+    setCurrency(profileData?.currency || 'USD');
+    setLanguage(profileData?.language || 'English');
+    setTimeZone(profileData?.timeZone || 'America/New_York');
+    setInterests(profileData?.interests || ['Electronics', 'Fashion', 'Books']);
+    setTravelerPrefs(profileData?.travelerPrefs || {
+      pickupAvailability: true,
+      maxItemWeight: '5',
+      preferredRegions: ['Europe', 'Asia'],
+      transportMethods: ['Airplane', 'Train']
+    });
+    setBuyerPrefs(profileData?.buyerPrefs || {
+      deliveryAddresses: [
+        { id: 1, label: 'Home', address: '123 Main St, New York, NY 10001', default: true },
+        { id: 2, label: 'Work', address: '456 Business Ave, New York, NY 10002', default: false }
+      ],
+      budgetRange: { min: 50, max: 500 },
+      preferredCategories: ['Electronics', 'Fashion', 'Home & Garden']
+    });
+  }, [profileData]);
 
   const currencies = [
     'USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY', 'CNY', 'SAR', 'AED', 'KWD', 'QAR', 'EGP', 'DZD', 'TRY', 'CHF', 'SEK', 'NOK', 'DKK', 'RUB', 'INR', 'BRL', 'ZAR', 'SGD', 'HKD', 'MXN', 'PLN', 'THB', 'MYR', 'IDR', 'KRW'
@@ -87,6 +105,19 @@ const PreferencesTab = ({ userRole, onUpdate }) => {
         default: addr?.id === addressId
       }))
     }));
+  };
+
+  const handleSave = async () => {
+    setIsLoading(true);
+    await onUpdate({
+      currency,
+      language,
+      timeZone,
+      interests,
+      travelerPrefs,
+      buyerPrefs
+    });
+    setIsLoading(false);
   };
 
   return (
@@ -342,6 +373,12 @@ const PreferencesTab = ({ userRole, onUpdate }) => {
           </div>
         </>
       )}
+      {/* زر الحفظ */}
+      <div className="flex justify-end pt-6">
+        <Button variant="default" onClick={handleSave} loading={isLoading}>
+          Save Changes
+        </Button>
+      </div>
     </div>
   );
 };

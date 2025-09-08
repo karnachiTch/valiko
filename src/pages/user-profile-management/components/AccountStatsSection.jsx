@@ -4,17 +4,34 @@ import api from '../../../api';
 const AccountStatsSection = ({ userRole }) => {
   const [stats, setStats] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
+  const [rawStats, setRawStats] = useState({});
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  // backend exposes dashboard stats at /api/dashboard/stats
-  const res = await api.get('/api/dashboard/stats', { headers });
-  console.debug('[AccountStatsSection] dashboard stats response:', res.data);
-  setStats(res.data.stats || res.data?.stats || []);
-  setRecentActivity(res.data.recentActivity || res.data?.recentActivity || []);
+        const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const res = await api.get('/api/dashboard/stats', { headers });
+        setRawStats(res.data);
+        // بناء مصفوفة stats حسب نوع المستخدم
+        if (res.data) {
+          if (userRole === 'traveler') {
+            setStats([
+              { icon: '📦', value: res.data.activeListings, label: 'Active Listings' },
+              { icon: '🕒', value: res.data.pendingRequests, label: 'Pending Requests' },
+              { icon: '✈️', value: res.data.upcomingTrips, label: 'Upcoming Trips' },
+              { icon: '💰', value: res.data.totalEarnings, label: 'Total Earnings' },
+            ]);
+          } else if (userRole === 'buyer') {
+            setStats([
+              { icon: '📝', value: res.data.activeRequests, label: 'Active Requests' },
+              { icon: '❤️', value: res.data.savedProducts, label: 'Saved Products' },
+              { icon: '✅', value: res.data.completedPurchases, label: 'Completed Purchases' },
+              { icon: '💸', value: res.data.totalSpent, label: 'Total Spent' },
+            ]);
+          }
+        }
+        setRecentActivity(res.data.recentActivity || res.data?.recentActivity || []);
       } catch (err) {
         console.error('Failed to fetch account stats:', err);
       }
@@ -22,8 +39,8 @@ const AccountStatsSection = ({ userRole }) => {
     fetchStats();
   }, [userRole]);
 
-  // Prioritize buyerStats when userRole is 'buyer'
-  const displayedStats = userRole === 'buyer' ? stats.filter(stat => stat.type === 'buyer') : stats;
+  // عرض جميع الإحصائيات للمشتري أو المسافر بدون فلترة
+  const displayedStats = stats;
 
   return (
     <div className="space-y-6">
@@ -41,7 +58,8 @@ const AccountStatsSection = ({ userRole }) => {
           ))}
         </div>
 
-        {/* Progress Indicators */}
+        {/*
+        Progress Indicators
         <div className="mt-6 space-y-3">
           <div>
             <div className="flex justify-between text-sm mb-1">
@@ -63,6 +81,7 @@ const AccountStatsSection = ({ userRole }) => {
             </div>
           </div>
         </div>
+        */}
       </div>
 
       {/* Recent Activity */}

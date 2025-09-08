@@ -9,6 +9,19 @@ import Button from '../../components/ui/Button';
 import Icon from '../../components/AppIcon';
 
 const MessagingSystem = () => {
+  const [user, setUser] = useState(null);
+  useEffect(() => {
+    // جلب بيانات المستخدم من /api/profile لتمرير avatar الحقيقي
+    const fetchProfile = async () => {
+      try {
+        const res = await api.get('/api/profile');
+        setUser(res.data);
+      } catch (err) {
+        setUser(null);
+      }
+    };
+    fetchProfile();
+  }, []);
   const [conversations, setConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -163,7 +176,7 @@ const MessagingSystem = () => {
         <meta name="description" content="Secure messaging between travelers and buyers on Valikoo marketplace" />
       </Helmet>
       <div className="min-h-screen bg-background">
-        <RoleBasedNavigation userRole="buyer" />
+        <RoleBasedNavigation userRole="buyer" user={user} />
         
         <main className="pt-14 lg:pt-16 pb-20 lg:pb-8">
           {/* Desktop Layout */}

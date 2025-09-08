@@ -33,10 +33,10 @@ const TravelerDashboard = () => {
   const fetchAll = async () => {
     const token = localStorage.getItem('accessToken');
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
-    // جلب الطلبات الحقيقية (محمي - إذا فشل الطلب لا نرمي الخطأ ونستمر)
+    // جلب الطلبات من نوع reserve فقط لضمان ظهور العدد الصحيح دائماً
     let fetchedBuyerRequests = [];
     try {
-      const requestsRes = await api.get('/api/requests', { headers });
+      const requestsRes = await api.get('/api/requests?type=reserve', { headers });
       fetchedBuyerRequests = Array.isArray(requestsRes.data) ? requestsRes.data : (requestsRes.data?.requests || []);
       setBuyerRequests(fetchedBuyerRequests);
     } catch (err) {
@@ -56,8 +56,9 @@ const TravelerDashboard = () => {
       const token = localStorage.getItem('accessToken');
       const headers = { Authorization: `Bearer ${token}` };
       // بيانات المستخدم
-      const userRes = await api.get('/api/auth/me', { headers });
-      setUser(userRes.data);
+  // جلب بيانات المستخدم من /api/profile لتمرير avatar الحقيقي
+  const userRes = await api.get('/api/profile', { headers });
+  setUser(userRes.data);
       // الإحصائيات
   const statsRes = await api.get('/api/dashboard/stats', { headers });
   console.log('dashboard stats from backend:', statsRes.data);
@@ -89,11 +90,11 @@ const TravelerDashboard = () => {
         },
         { 
           title: 'Pending Requests', 
-          // use the freshly fetched requests list so the metric updates immediately
-          value: Array.isArray(fetchedBuyerRequests) ? fetchedBuyerRequests.filter(r => r?.status === 'pending').length : 0,
+          // يحسب عدد الطلبات المحجوزة (type === 'reserve' و status === 'pending') من قائمة الطلبات
+          value: Array.isArray(buyerRequests) ? buyerRequests.filter(r => r?.status === 'pending' && r?.type === 'reserve').length : 0,
           icon: 'MessageCircle', 
           trend: 'up', 
-          trendValue: `+${Array.isArray(fetchedBuyerRequests) ? fetchedBuyerRequests.filter(r => r?.status === 'pending').length : 0}`,
+          trendValue: `+${Array.isArray(buyerRequests) ? buyerRequests.filter(r => r?.status === 'pending' && r?.type === 'reserve').length : 0}`,
           color: 'warning' 
         },
         { 
@@ -153,7 +154,7 @@ const TravelerDashboard = () => {
       const token = localStorage.getItem('accessToken');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       // send product id as JSON body
-      const res = await api.post('/api/products/mark-fulfilled', { product_id: listingId }, { headers });
+  const res = await api.patch('/api/products/mark-fulfilled', { product_id: listingId }, { headers });
       setActiveListings(prev => (prev || []).map(l => l?.id === listingId ? { ...l, status: 'fulfilled', isActive: false } : l));
       try { alert(res?.data?.msg || 'Marked as fulfilled'); } catch (e) {}
       handleAfterEditOrFulfill(); // تحديث البيانات بعد Fulfill
@@ -166,12 +167,34 @@ const TravelerDashboard = () => {
     }
   };
 
-  const handleAcceptRequest = (requestId) => {
-    console.log('Accept request:', requestId);
+  const handleAcceptRequest = async (requestId) => {
+    if (!requestId) return;
+    try {
+      const token = localStorage.getItem('accessToken');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      await api.patch(`/api/requests/${requestId}/status`, { status: 'accepted' }, { headers });
+      // تحديث الطلبات محلياً بدون انتظار fetchAll
+      setBuyerRequests(prev => prev.filter(r => r.id !== requestId && r._id !== requestId));
+      // تحديث عداد الداشبورد
+      setDashboardMetrics(metrics => metrics.map(m => m.title === 'Pending Requests' ? { ...m, value: m.value - 1, trendValue: `+${m.value - 1}` } : m));
+    } catch (err) {
+      alert('فشل قبول الطلب');
+    }
   };
 
-  const handleDeclineRequest = (requestId) => {
-    console.log('Decline request:', requestId);
+  const handleDeclineRequest = async (requestId) => {
+    if (!requestId) return;
+    try {
+      const token = localStorage.getItem('accessToken');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      await api.patch(`/api/requests/${requestId}/status`, { status: 'declined' }, { headers });
+      // تحديث الطلبات محلياً بدون انتظار fetchAll
+      setBuyerRequests(prev => prev.filter(r => r.id !== requestId && r._id !== requestId));
+      // تحديث عداد الداشبورد
+      setDashboardMetrics(metrics => metrics.map(m => m.title === 'Pending Requests' ? { ...m, value: m.value - 1, trendValue: `+${m.value - 1}` } : m));
+    } catch (err) {
+      alert('فشل رفض الطلب');
+    }
   };
 
   const handleViewProfile = (buyerId) => {
@@ -341,15 +364,7 @@ const TravelerDashboard = () => {
                       </div>
                     ))
                   ) : (
-                    <div className="text-muted-foreground">
-                      No requests found.
-                      <div className="mt-2 text-xs text-muted-foreground">Debug:</div>
-                      <div className="mt-1 text-xs text-muted-foreground">Token present: {localStorage.getItem('accessToken') ? 'yes' : 'no'}</div>
-                      <details className="mt-2 text-xs text-muted-foreground p-2 bg-muted/20 rounded">
-                        <summary className="cursor-pointer">Show buyerRequests (raw)</summary>
-                        <pre className="text-xs mt-2 whitespace-pre-wrap">{JSON.stringify(buyerRequests, null, 2)}</pre>
-                      </details>
-                    </div>
+                    <div className="text-muted-foreground">No requests found.</div>
                   )}
                 </div>
               </div>

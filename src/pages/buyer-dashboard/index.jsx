@@ -7,11 +7,38 @@ import SearchSection from './components/SearchSection';
 import ProductGrid from './components/ProductGrid';
 import SavedItemsSection from './components/SavedItemsSection';
 import RecentRequestsPanel from './components/RecentRequestsPanel';
+import CreateProductRequestForm from './components/CreateProductRequestForm';
+import { FiShoppingBag, FiHeart, FiCheckCircle, FiDollarSign, FiClipboard } from 'react-icons/fi';
+
+const iconMap = {
+  ShoppingBag: <FiShoppingBag className="text-4xl" />,
+  Heart: <FiHeart className="text-4xl" />,
+  CheckCircle: <FiCheckCircle className="text-4xl" />,
+  DollarSign: <FiDollarSign className="text-4xl" />,
+  ClipboardList: <FiClipboard className="text-4xl" />,
+};
 
 const BuyerDashboard = () => {
+  const [showRequestModal, setShowRequestModal] = useState(false);
   const [currentLanguage, setCurrentLanguage] = useState('EN');
   const [user, setUser] = useState(null);
   const [metricsData, setMetricsData] = useState([]);
+
+  // جلب بيانات المستخدم من /api/profile لتمرير avatar الحقيقي
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const api = await import('../../api').then(m => m.default);
+        const token = localStorage.getItem('accessToken');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const res = await api.get('/api/profile', { headers });
+        setUser(res.data);
+      } catch (err) {
+        setUser(null);
+      }
+    };
+    fetchProfile();
+  }, []);
 
   useEffect(() => {
     const savedLanguage = localStorage.getItem('preferred-language');
@@ -29,11 +56,39 @@ const BuyerDashboard = () => {
         // fetch dashboard stats for buyer
         const statsRes = await api.get('/api/dashboard/stats', { headers });
         const s = statsRes.data || {};
+
+        // fetch buyer-created requests (type=buyer_request)
+        let buyerRequestsCount = 0;
+        try {
+          const buyerRequestsRes = await api.get('/api/requests?type=buyer_request', { headers });
+          if (Array.isArray(buyerRequestsRes.data)) {
+            buyerRequestsCount = buyerRequestsRes.data.length;
+          } else if (buyerRequestsRes.data?.requests) {
+            buyerRequestsCount = buyerRequestsRes.data.requests.length;
+          }
+        } catch (e) {
+          buyerRequestsCount = 0;
+        }
+
+        // fetch active traveler requests (type=traveler_request, status=pending)
+        let activeTravelerRequestsCount = 0;
+        try {
+          const travelerRequestsRes = await api.get('/api/requests?type=traveler_request&status=pending', { headers });
+          if (Array.isArray(travelerRequestsRes.data)) {
+            activeTravelerRequestsCount = travelerRequestsRes.data.length;
+          } else if (travelerRequestsRes.data?.requests) {
+            activeTravelerRequestsCount = travelerRequestsRes.data.requests.length;
+          }
+        } catch (e) {
+          activeTravelerRequestsCount = 0;
+        }
+
         const mapped = [
-          { title: 'Active Requests', value: (s.activeRequests !== undefined && s.activeRequests !== null) ? s.activeRequests : 0, subtitle: 'Open requests', icon: 'ShoppingBag', trend: 'up', trendValue: '', color: 'primary' },
+          { title: 'Active Requests', value: activeTravelerRequestsCount, subtitle: 'Open traveler requests', icon: 'ShoppingBag', trend: 'up', trendValue: '', color: 'primary' },
           { title: 'Saved Products', value: (s.savedProducts !== undefined && s.savedProducts !== null) ? s.savedProducts : 0, subtitle: 'Items in wishlist', icon: 'Heart', trend: 'up', trendValue: '', color: 'accent' },
           { title: 'Completed Purchases', value: (s.completedPurchases !== undefined && s.completedPurchases !== null) ? s.completedPurchases : 0, subtitle: 'Successful transactions', icon: 'CheckCircle', trend: 'up', trendValue: '', color: 'success' },
-          { title: 'Total Spent', value: s.totalSpent ? `$${s.totalSpent}` : '$0', subtitle: 'This year', icon: 'DollarSign', trend: 'up', trendValue: '', color: 'warning' }
+          { title: 'Total Spent', value: s.totalSpent ? `$${s.totalSpent}` : '$0', subtitle: 'This year', icon: 'DollarSign', trend: 'up', trendValue: '', color: 'warning' },
+          { title: 'My Orders', value: buyerRequestsCount, subtitle: 'Requests you created', icon: 'ClipboardList', trend: 'up', trendValue: '', color: 'info' },
         ];
         setMetricsData(mapped);
       } catch (err) {
@@ -69,44 +124,48 @@ const BuyerDashboard = () => {
           <div className="container mx-auto px-4 py-6 space-y-8">
             
             {/* Welcome Section */}
-            <div className="bg-gradient-to-r from-primary/10 to-accent/10 rounded-lg p-6 border border-border">
-              <div className="flex items-center justify-between">
-                <div>
-                <h1 className="text-2xl font-bold text-foreground">Welcome back, {user?.fullName || 'Traveler'}!</h1>
-
-                  <p className="text-muted-foreground">
-                    Discover amazing products from travelers around the world
-                  </p>
-                </div>
-                <div className="hidden md:block text-right">
-                  <p className="text-sm text-muted-foreground">Today's Date</p>
-                  <p className="font-medium text-foreground">
-                    {new Date()?.toLocaleDateString('en-US', { 
-                      weekday: 'long', 
-                      year: 'numeric', 
-                      month: 'long', 
-                      day: 'numeric' 
-                    })}
-                  </p>
-                </div>
+            <div className="relative rounded-2xl overflow-hidden border border-border shadow-lg bg-gradient-to-br from-blue-100 via-white/60 to-blue-50 backdrop-blur-md py-10 px-8 flex flex-col md:flex-row items-center justify-between gap-8">
+              <div className="flex flex-col items-start gap-2">
+                <h1 className="text-3xl md:text-4xl font-extrabold text-gray-900 drop-shadow-lg">Welcome back, {user?.fullName || 'Traveler'}!</h1>
+              </div>
+              <div className="flex flex-col items-center gap-2">
+                <button
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-blue-500 to-blue-400 text-white font-bold shadow-lg hover:from-blue-600 hover:to-blue-500 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  onClick={() => setShowRequestModal(true)}
+                  title="Create a new product request"
+                >
+                  <span>Create Product Request</span>
+                </button>
+              </div>
+              <div className="flex flex-col items-end bg-white/70 rounded-xl px-4 py-2 shadow-md">
+                <p className="text-sm text-gray-500">Today's Date</p>
+                <p className="font-bold text-gray-900 text-lg">
+                  {new Date()?.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                </p>
               </div>
             </div>
 
             {/* Metrics Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {metricsData?.map((metric, index) => (
-                <MetricsCard
-                  key={index}
-                  title={metric?.title}
-                  value={metric?.value}
-                  subtitle={metric?.subtitle}
-                  icon={metric?.icon}
-                  trend={metric?.trend}
-                  trendValue={metric?.trendValue}
-                  color={metric?.color}
-                />
-              ))}
-            </div>
+            <section className="w-full my-8">
+              <div className="rounded-2xl bg-gradient-to-br from-blue-50 via-white/80 to-blue-100 shadow-xl border border-blue-100 p-8">
+                <h2 className="text-2xl font-extrabold text-gray-900 mb-6 flex items-center gap-2">
+                  <FiShoppingBag className="text-blue-500 text-3xl animate-bounce" />
+                Overview
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+                  {metricsData?.map((metric, index) => (
+                    <div key={index} className="flex flex-col items-center justify-center bg-white/80 rounded-xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-all duration-200">
+                      <div className={`mb-2 ${metric.color === 'primary' ? 'text-blue-500' : metric.color === 'accent' ? 'text-pink-500' : metric.color === 'success' ? 'text-green-500' : metric.color === 'warning' ? 'text-yellow-500' : 'text-indigo-500'} animate-fade-in`}>
+                        {iconMap[metric.icon]}
+                      </div>
+                      <div className="text-2xl font-bold text-gray-900">{metric.value}</div>
+                      <div className="text-sm text-gray-500 font-medium mt-1">{metric.title}</div>
+                      <div className="text-xs text-gray-400 mt-1">{metric.subtitle}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
 
             {/* Featured Products Carousel */}
             <FeaturedProductsCarousel />
@@ -131,36 +190,24 @@ const BuyerDashboard = () => {
               </div>
             </div>
 
-            {/* Quick Actions */}
-            <div className="bg-card rounded-lg border border-border p-6">
-              <h2 className="text-lg font-semibold text-foreground mb-4">Quick Actions</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <button className="flex flex-col items-center space-y-2 p-4 rounded-lg border border-border hover:bg-muted transition-smooth">
-                  <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-                    <span className="text-2xl">🔍</span>
-                  </div>
-                  <span className="text-sm font-medium text-foreground">Browse All</span>
-                </button>
-                <button className="flex flex-col items-center space-y-2 p-4 rounded-lg border border-border hover:bg-muted transition-smooth">
-                  <div className="w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center">
-                    <span className="text-2xl">💝</span>
-                  </div>
-                  <span className="text-sm font-medium text-foreground">Gift Items</span>
-                </button>
-                <button className="flex flex-col items-center space-y-2 p-4 rounded-lg border border-border hover:bg-muted transition-smooth">
-                  <div className="w-12 h-12 bg-success/10 rounded-lg flex items-center justify-center">
-                    <span className="text-2xl">🏷️</span>
-                  </div>
-                  <span className="text-sm font-medium text-foreground">Deals</span>
-                </button>
-                <button className="flex flex-col items-center space-y-2 p-4 rounded-lg border border-border hover:bg-muted transition-smooth">
-                  <div className="w-12 h-12 bg-warning/10 rounded-lg flex items-center justify-center">
-                    <span className="text-2xl">🎯</span>
-                  </div>
-                  <span className="text-sm font-medium text-foreground">Requests</span>
-                </button>
+            {/* Modal for Create Product Request */}
+            {showRequestModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+                <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md relative mt-12">
+                  <button
+                    className="absolute top-2 right-2 text-gray-500 hover:text-gray-700"
+                    onClick={() => setShowRequestModal(false)}
+                    aria-label="Close"
+                  >
+                    {/* SVG X icon for better visibility */}
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                  <CreateProductRequestForm onRequestCreated={() => setShowRequestModal(false)} onClose={() => setShowRequestModal(false)} />
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </main>
       </div>

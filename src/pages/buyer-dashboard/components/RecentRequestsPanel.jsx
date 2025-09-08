@@ -12,30 +12,16 @@ const RecentRequestsPanel = () => {
     let mounted = true;
     const fetchRequests = async () => {
       try {
-        const res = await api.get('/api/requests');
-        if (!mounted) return;
-        const items = Array.isArray(res.data) ? res.data : (res.data?.requests || []);
-
-        // Batch fetch missing product names to avoid N requests
-        const toLookup = items.filter(it => !(it.productName && it.productName.length) && it.productId).map(it => it.productId);
-        if (toLookup.length > 0) {
-          try {
-            const idsParam = encodeURIComponent(toLookup.join(','));
-            const batchRes = await api.get(`/api/products/batch?ids=${idsParam}`);
-            const lookupMap = {};
-            (Array.isArray(batchRes.data) ? batchRes.data : []).forEach(p => { if (p && p.id) lookupMap[p.id] = p.name; });
-            const filled = items.map(it => ({ ...it, productName: it.productName && it.productName.length ? it.productName : (lookupMap[it.productId] || it.productName || '') }));
-            setRequests(filled);
-          } catch (e) {
-            console.error('[RecentRequestsPanel] batch lookup failed', e);
-            setRequests(items);
-          }
-        } else {
-          setRequests(items);
-        }
+        // جلب طلبات المشتري
+        const buyerRes = await api.get('/api/requests?type=buyer_request');
+        const buyerItems = Array.isArray(buyerRes.data) ? buyerRes.data : (buyerRes.data?.requests || []);
+        // جلب طلبات المسافر
+        const travelerRes = await api.get('/api/requests?type=traveler_request');
+        const travelerItems = Array.isArray(travelerRes.data) ? travelerRes.data : (travelerRes.data?.requests || []);
+        setRequests({ buyer: buyerItems, traveler: travelerItems });
       } catch (e) {
         console.error('[RecentRequestsPanel] fetch error', e);
-        setRequests([]);
+        setRequests({ buyer: [], traveler: [] });
       } finally {
         if (mounted) setLoading(false);
       }
@@ -45,7 +31,22 @@ const RecentRequestsPanel = () => {
   }, []);
 
   // pre-normalize travelDate for rendering
-  const normalizedRequests = (requests || []).map(r => {
+  const normalizedBuyerRequests = (requests?.buyer || []).map(r => {
+    try {
+      const raw = r?.travelDate || r?.travel_dates || '';
+      if (!raw) return { ...r, travelDate: '' };
+      if (typeof raw === 'string') return { ...r, travelDate: raw };
+      if (typeof raw === 'object') {
+        const sd = raw.startDate || raw.departure || raw.departureDate;
+        const ed = raw.endDate || raw.arrival || raw.arrivalDate;
+        return { ...r, travelDate: sd && ed ? `${sd} → ${ed}` : (sd || ed || '') };
+      }
+      return { ...r, travelDate: '' };
+    } catch (e) {
+      return { ...r, travelDate: '' };
+    }
+  });
+  const normalizedTravelerRequests = (requests?.traveler || []).map(r => {
     try {
       const raw = r?.travelDate || r?.travel_dates || '';
       if (!raw) return { ...r, travelDate: '' };
@@ -174,75 +175,154 @@ const RecentRequestsPanel = () => {
     <div className="bg-card rounded-lg border border-border p-6">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">Recent Requests</h2>
-          <p className="text-sm text-muted-foreground">{requests?.length} total requests</p>
+          <h2 className="text-lg font-semibold text-foreground">الطلبات الأخيرة</h2>
+          <p className="text-sm text-muted-foreground">{requests?.buyer?.length + requests?.traveler?.length} إجمالي الطلبات</p>
         </div>
         <Button variant="outline" size="sm">
           <Icon name="Filter" size={14} className="mr-2" />
-          Filter
+          تصفية
         </Button>
       </div>
-      <div className="space-y-4">
-        {normalizedRequests?.map((request) => (
-          <div key={request?.id} className="bg-background rounded-lg border border-border p-4 hover:shadow-card transition-smooth">
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center space-x-3">
-                <Image
-                  src={request?.travelerAvatar}
-                  alt={request?.travelerName}
-                  className="w-10 h-10 rounded-full"
-                />
-                <div>
-                  <h3 className="font-medium text-foreground">{request?.productName}</h3>
-                  <p className="text-sm text-muted-foreground">{request?.travelerName}</p>
+
+      {/* Buyer Requests Section */}
+      <div className="mb-8">
+        <h3 className="text-md font-bold text-foreground mb-2">طلبات المشترين</h3>
+        {normalizedBuyerRequests.length === 0 ? (
+          <div className="text-sm text-muted-foreground">لا توجد طلبات للمشتري.</div>
+        ) : (
+          <div className="space-y-4">
+            {normalizedBuyerRequests.map((request) => (
+              <div key={request?.id} className="bg-background rounded-lg border border-border p-4 hover:shadow-card transition-smooth">
+                {/* ...existing card rendering code... */}
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center space-x-3">
+                    <Image
+                      src={request?.travelerAvatar}
+                      alt={request?.travelerName}
+                      className="w-10 h-10 rounded-full"
+                    />
+                    <div>
+                      <h3 className="font-medium text-foreground">{request?.productName}</h3>
+                      <p className="text-sm text-muted-foreground">{request?.travelerName}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    {getStatusBadge(request?.status)}
+                    <span className="font-semibold text-foreground">{request?.price}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2 mb-3">
+                  <div className="bg-muted/50 rounded-lg p-3">
+                    <p className="text-sm text-foreground mb-1">
+                      <span className="font-medium">رسالتك:</span>
+                    </p>
+                    <p className="text-sm text-muted-foreground">{request?.message}</p>
+                  </div>
+
+                  {request?.travelerResponse && (
+                    <div className="bg-primary/5 rounded-lg p-3">
+                      <p className="text-sm text-foreground mb-1">
+                        <span className="font-medium">رد المسافر:</span>
+                      </p>
+                      <p className="text-sm text-muted-foreground">{request?.travelerResponse}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
+                  <div className="flex items-center space-x-4">
+                    <span>تاريخ الطلب: {request?.requestDate}</span>
+                    {request?.responseDate && <span>تاريخ الرد: {request?.responseDate}</span>}
+                    <span>تاريخ السفر: {request?.travelDate}</span>
+                  </div>
+                  <span>{request?.deliveryMethod}</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+                    <Icon name="Truck" size={12} />
+                    <span>{request?.deliveryMethod}</span>
+                  </div>
+                  {getStatusActions(request)}
                 </div>
               </div>
-              <div className="flex items-center space-x-2">
-                {getStatusBadge(request?.status)}
-                <span className="font-semibold text-foreground">{request?.price}</span>
-              </div>
-            </div>
-
-            <div className="space-y-2 mb-3">
-              <div className="bg-muted/50 rounded-lg p-3">
-                <p className="text-sm text-foreground mb-1">
-                  <span className="font-medium">Your message:</span>
-                </p>
-                <p className="text-sm text-muted-foreground">{request?.message}</p>
-              </div>
-
-              {request?.travelerResponse && (
-                <div className="bg-primary/5 rounded-lg p-3">
-                  <p className="text-sm text-foreground mb-1">
-                    <span className="font-medium">Traveler response:</span>
-                  </p>
-                  <p className="text-sm text-muted-foreground">{request?.travelerResponse}</p>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
-              <div className="flex items-center space-x-4">
-                <span>Requested: {request?.requestDate}</span>
-                {request?.responseDate && <span>Responded: {request?.responseDate}</span>}
-                <span>Travel: {request?.travelDate}</span>
-              </div>
-              <span>{request?.deliveryMethod}</span>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2 text-xs text-muted-foreground">
-                <Icon name="Truck" size={12} />
-                <span>{request?.deliveryMethod}</span>
-              </div>
-              {getStatusActions(request)}
-            </div>
+            ))}
           </div>
-        ))}
+        )}
       </div>
+
+      {/* Traveler Requests Section */}
+      <div>
+        <h3 className="text-md font-bold text-foreground mb-2">طلبات المسافرين</h3>
+        {normalizedTravelerRequests.length === 0 ? (
+          <div className="text-sm text-muted-foreground">لا توجد طلبات للمسافر.</div>
+        ) : (
+          <div className="space-y-4">
+            {normalizedTravelerRequests.map((request) => (
+              <div key={request?.id} className="bg-background rounded-lg border border-border p-4 hover:shadow-card transition-smooth">
+                {/* ...existing card rendering code... */}
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center space-x-3">
+                    <Image
+                      src={request?.travelerAvatar}
+                      alt={request?.travelerName}
+                      className="w-10 h-10 rounded-full"
+                    />
+                    <div>
+                      <h3 className="font-medium text-foreground">{request?.productName}</h3>
+                      <p className="text-sm text-muted-foreground">{request?.travelerName}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    {getStatusBadge(request?.status)}
+                    <span className="font-semibold text-foreground">{request?.price}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2 mb-3">
+                  <div className="bg-muted/50 rounded-lg p-3">
+                    <p className="text-sm text-foreground mb-1">
+                      <span className="font-medium">رسالتك:</span>
+                    </p>
+                    <p className="text-sm text-muted-foreground">{request?.message}</p>
+                  </div>
+
+                  {request?.travelerResponse && (
+                    <div className="bg-primary/5 rounded-lg p-3">
+                      <p className="text-sm text-foreground mb-1">
+                        <span className="font-medium">رد المسافر:</span>
+                      </p>
+                      <p className="text-sm text-muted-foreground">{request?.travelerResponse}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
+                  <div className="flex items-center space-x-4">
+                    <span>تاريخ الطلب: {request?.requestDate}</span>
+                    {request?.responseDate && <span>تاريخ الرد: {request?.responseDate}</span>}
+                    <span>تاريخ السفر: {request?.travelDate}</span>
+                  </div>
+                  <span>{request?.deliveryMethod}</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+                    <Icon name="Truck" size={12} />
+                    <span>{request?.deliveryMethod}</span>
+                  </div>
+                  {getStatusActions(request)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="flex justify-center mt-6">
         <Button variant="outline">
-          View All Requests
+          عرض جميع الطلبات
         </Button>
       </div>
     </div>

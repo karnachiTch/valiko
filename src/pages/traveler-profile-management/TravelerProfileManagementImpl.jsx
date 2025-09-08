@@ -14,26 +14,24 @@ const TravelerProfileManagement = () => {
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-   const fetchUser = async () => {
+    const fetchProfile = async () => {
       try {
-        const res = await import('../../api').then(m => m.default.get('/api/auth/me'));
+        const res = await import('../../api').then(m => m.default.get('/api/profile'));
         setUser(res.data);
-        setProfileData({
-          name: res.data.fullName || res.data.name || '',
-          email: res.data.email || '',
-          avatar: res.data.avatar || '',
-          bio: res.data.bio || '',
-          location: res.data.location || '',
-          languages: res.data.languages || [],
-          phone: res.data.phone || '',
-          website: res.data.website || '',
-          verified: res.data.verified || false
+        // إذا كان fullName موجودًا، اجعل name = fullName فقط
+        setProfileData(prev => {
+          const data = { ...res.data };
+          if (data.fullName) {
+            data.name = data.fullName;
+          }
+          return data;
         });
       } catch (err) {
         setUser(null);
+        setProfileData({});
       }
     };
-    fetchUser();
+    fetchProfile();
   }, []);
 
   const tabs = [
@@ -49,20 +47,10 @@ const TravelerProfileManagement = () => {
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const res = await import('../../api').then(m => m.default.put('/api/profile', updatedData, { headers }));
       console.log('Profile saved successfully:', res.data);
-      // إعادة جلب البيانات من الخادم بعد الحفظ
-      const userRes = await import('../../api').then(m => m.default.get('/api/auth/me', { headers }));
-      setUser(userRes.data);
-      setProfileData({
-        name: userRes.data.fullName || userRes.data.name || '',
-        email: userRes.data.email || '',
-        avatar: userRes.data.avatar || '',
-        bio: userRes.data.bio || '',
-        location: userRes.data.location || '',
-        languages: userRes.data.languages || [],
-        phone: userRes.data.phone || '',
-        website: userRes.data.website || '',
-        verified: userRes.data.verified || false
-      });
+  // إعادة جلب جميع البيانات من /api/profile بعد الحفظ
+  const profileRes = await import('../../api').then(m => m.default.get('/api/profile', { headers }));
+  setUser(profileRes.data);
+  setProfileData(profileRes.data || {});
     } catch (err) {
       console.error('Failed to save profile:', err);
     }
@@ -89,7 +77,7 @@ const TravelerProfileManagement = () => {
         );
       case 'preferences':
         return (
-          <PreferencesTab userRole="traveler" onUpdate={handleProfileUpdate} />
+          <PreferencesTab userRole="traveler" onUpdate={handleProfileUpdate} profileData={profileData} />
         );
       default:
         return null;

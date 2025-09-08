@@ -160,8 +160,17 @@ const RoleBasedNavigation = ({ userRole = 'traveler', isCollapsed = false, user 
                 {showProfile && displayUser && (
                   <div className="absolute right-0 top-12 min-w-[220px] bg-card border border-border rounded-lg shadow-lg z-50 p-4">
                     <div className="flex flex-col items-center space-y-2">
-                      <div className="w-12 h-12 bg-secondary rounded-full flex items-center justify-center">
-                        <Icon name="User" size={24} color="white" />
+                      <div className="w-12 h-12 bg-secondary rounded-full flex items-center justify-center overflow-hidden">
+                        {displayUser?.avatar ? (
+                          <img
+                            src={displayUser.avatar}
+                            alt="Profile"
+                            className="w-full h-full object-cover rounded-full"
+                            onError={e => { e.target.onerror=null; e.target.src="/assets/images/no_image.png"; }}
+                          />
+                        ) : (
+                          <Icon name="User" size={24} color="white" />
+                        )}
                       </div>
                       <div className="text-lg font-bold">{displayUser.fullName}</div>
                       <div className="text-sm text-muted-foreground">{displayUser.email}</div>

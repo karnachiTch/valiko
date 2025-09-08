@@ -223,8 +223,9 @@ const TabbedContent = ({ product, isDesktop = false, onSelectPickup }) => {
       {/* Traveler Header */}
       <div className="flex items-start space-x-4">
         <AppImage
-          src={product?.traveler?.avatar}
-          alt={product?.traveler?.name}
+          src={product?.traveler?.avatar || (product?.traveler?.fullName || product?.traveler?.name ? `https://ui-avatars.com/api/?name=${encodeURIComponent(product?.traveler?.fullName || product?.traveler?.name)}` : "https://ui-avatars.com/api/?name=Traveler")}
+          alt={product?.traveler?.name || "Traveler"}
+          onError={e => { e.target.onerror=null; e.target.src="https://ui-avatars.com/api/?name=Traveler"; }}
           className="w-16 h-16 rounded-full object-cover"
         />
         <div className="flex-1">

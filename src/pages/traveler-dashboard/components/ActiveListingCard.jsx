@@ -98,6 +98,13 @@ const ActiveListingCard = ({ listing, onEdit, onViewRequests, onMarkFulfilled, i
             >
               Requests ({requests?.length ?? 0})
             </Button>
+            <Button
+              variant="primary"
+              disabled={listing?.status === 'reserved'}
+              onClick={() => {}}
+            >
+              {listing?.status === 'reserved' ? 'محجوز' : 'Reserve Product'}
+            </Button>
       {/* نافذة منبثقة لعرض الطلبات */}
       {showRequestsModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">

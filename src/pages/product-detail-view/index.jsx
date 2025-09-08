@@ -203,6 +203,24 @@ const ProductDetailView = () => {
     }
   };
 
+  // زر الحجز الجديد
+  const handleReserveProduct = async () => {
+    setLoading(true);
+    try {
+      const productId = productData?.id || productData?._id;
+      if (!productId) throw new Error('Product ID not found');
+      // إرسال طلب الحجز
+      const res = await api.post(`/api/products/${productId}/reserve`);
+      setLoading(false);
+      alert('تم حجز المنتج بنجاح!');
+      // تحديث حالة المنتج محلياً
+      setProductData(prev => ({ ...prev, status: 'reserved', buyer_id: 'me' }));
+    } catch (err) {
+      setLoading(false);
+      alert('فشل في حجز المنتج: ' + (err?.response?.data?.detail || err.message));
+    }
+  };
+
   const totalPrice = (productData?.price * quantity)?.toFixed(2);
 
   return (
@@ -265,12 +283,13 @@ const ProductDetailView = () => {
                         Message Traveler
                       </Button>
                       <Button 
-                        onClick={handleRequestProduct}
+                        onClick={handleReserveProduct}
                         loading={loading}
                         size="lg"
                         className="px-8"
+                        disabled={productData?.status === 'reserved'}
                       >
-                        Request Product
+                        {productData?.status === 'reserved' ? 'محجوز' : 'حجز المنتج'}
                       </Button>
                     </div>
                   </div>
@@ -333,12 +352,13 @@ const ProductDetailView = () => {
                 <Icon name="MessageCircle" size={16} />
               </Button>
               <Button 
-                onClick={handleRequestProduct}
+                onClick={handleReserveProduct}
                 loading={loading}
                 size="lg"
                 className="px-6"
+                disabled={productData?.status === 'reserved'}
               >
-                Request
+                {productData?.status === 'reserved' ? 'محجوز' : 'حجز المنتج'}
               </Button>
             </div>
           </div>

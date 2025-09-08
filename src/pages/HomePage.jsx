@@ -1,3 +1,10 @@
+import React, { useEffect, useState, useRef } from "react";
+import { MdLocalShipping, MdAccountBalanceWallet, MdGroups, MdHeadsetMic } from "react-icons/md";
+import LoginForm from "./login-screen/components/LoginForm";
+import { useNavigate } from "react-router-dom";
+import { PaperAirplaneIcon } from "@heroicons/react/24/solid";
+import api from "../api";
+
 // بيانات قسم المتسوقين (Shoppers)
 const shopperStepsData = [
   {
@@ -45,6 +52,46 @@ const travelerStepsData = [
     imageUrl: "https://images.unsplash.com/photo-1556742044-3c52d6e88c62?q=80&w=2670&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
   },
 ];
+
+// المكون الرئيسي HowItWorksSection
+const HowItWorksSection = () => {
+  const [activeTab, setActiveTab] = useState('shoppers');
+
+  const tabBaseStyles = "px-6 py-3 text-lg font-semibold rounded-t-lg transition-colors duration-300 focus:outline-none";
+  const activeTabStyles = "text-blue-600 border-b-4 border-blue-600 bg-blue-50";
+  const inactiveTabStyles = "text-gray-500 hover:text-blue-600 hover:bg-gray-100";
+
+  return (
+    <section className="bg-gray-50 px-8 py-12">
+      <div className="max-w-6xl mx-auto">
+        <h3 className="text-center text-6xl sm:text-6xl font-extrabold mb-8 text-gray-800">
+          How Valikoo Works
+        </h3>
+        
+        {/* أزرار التبويب (Tabs) */}
+        <div className="flex justify-center border-b-2 border-gray-200">
+          <button
+            onClick={() => setActiveTab('shoppers')}
+            className={`${tabBaseStyles} ${activeTab === 'shoppers' ? activeTabStyles : inactiveTabStyles}`}
+          >
+            For Shoppers
+          </button>
+          <button
+            onClick={() => setActiveTab('travelers')}
+            className={`${tabBaseStyles} ${activeTab === 'travelers' ? activeTabStyles : inactiveTabStyles}`}
+          >
+            For Travelers
+          </button>
+        </div>
+        {/* عرض المحتوى بناءً على التبويب النشط */}
+        <div>
+          {activeTab === 'shoppers' && <HowItWorksContent steps={shopperStepsData} />}
+          {activeTab === 'travelers' && <HowItWorksContent steps={travelerStepsData} />}
+        </div>
+      </div>
+    </section>
+  );
+};
 
 // مكون لعرض خطوات العمل
 const HowItWorksContent = ({ steps }) => (
@@ -98,69 +145,12 @@ const HowItWorksContent = ({ steps }) => (
   </div>
 );
 
-// المكون الرئيسي HowItWorksSection
-const HowItWorksSection = () => {
-  const [activeTab, setActiveTab] = useState('shoppers');
-
-  const tabBaseStyles = "px-6 py-3 text-lg font-semibold rounded-t-lg transition-colors duration-300 focus:outline-none";
-  const activeTabStyles = "text-blue-600 border-b-4 border-blue-600 bg-blue-50";
-  const inactiveTabStyles = "text-gray-500 hover:text-blue-600 hover:bg-gray-100";
-
-  return (
-    <section className="bg-gray-50 px-8 py-12">
-      <div className="max-w-6xl mx-auto">
-        <h3 className="text-center text-6xl sm:text-6xl font-extrabold mb-8 text-gray-800">
-          How Valikoo Works
-        </h3>
-        
-        {/* أزرار التبويب (Tabs) */}
-        <div className="flex justify-center border-b-2 border-gray-200">
-          <button
-            onClick={() => setActiveTab('shoppers')}
-            className={`${tabBaseStyles} ${activeTab === 'shoppers' ? activeTabStyles : inactiveTabStyles}`}
-          >
-            For Shoppers
-          </button>
-          <button
-            onClick={() => setActiveTab('travelers')}
-            className={`${tabBaseStyles} ${activeTab === 'travelers' ? activeTabStyles : inactiveTabStyles}`}
-          >
-            For Travelers
-          </button>
-        </div>
-        {/* عرض المحتوى بناءً على التبويب النشط */}
-        <div>
-          {activeTab === 'shoppers' && <HowItWorksContent steps={shopperStepsData} />}
-          {activeTab === 'travelers' && <HowItWorksContent steps={travelerStepsData} />}
-        </div>
-      </div>
-    </section>
-  );
-};
-import React, { useEffect, useState, useRef } from "react";
-import { MdLocalShipping, MdAccountBalanceWallet, MdGroups, MdHeadsetMic } from "react-icons/md";
-import LoginForm from "./login-screen/components/LoginForm";
-import { useNavigate } from "react-router-dom";
-import { PaperAirplaneIcon } from "@heroicons/react/24/solid";
-import api from "../api";
-
 export default function HomePage() {
-  const [products, setProducts] = useState([]);
-  const [showLogin, setShowLogin] = useState(false);
-  const navigate = useNavigate();
-  // For mobile incremental loading (scroll-to-load)
-  const [displayedProducts, setDisplayedProducts] = useState([]);
-  const [itemsPerPage] = useState(6);
-  const [pageIndex, setPageIndex] = useState(1);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const containerRef = useRef(null);
-
-  useEffect(() => {
-    // جلب جميع المنتجات المضافة من الواجهة الخلفية باستخدام axios/api.js
+  // دالة تحديث المنتجات بعد أي عملية (رفض/قبول)
+  const refreshProducts = () => {
     api.get('/api/products')
       .then((res) => {
         const data = res.data;
-        console.log('API /api/products response:', data);
         if (Array.isArray(data)) {
           setProducts(data);
         } else if (data && Array.isArray(data.value)) {
@@ -174,6 +164,20 @@ export default function HomePage() {
         }
       })
       .catch(() => setProducts([]));
+  };
+  const [products, setProducts] = useState([]);
+  const [showLogin, setShowLogin] = useState(false);
+  const navigate = useNavigate();
+  // For mobile incremental loading (scroll-to-load)
+  const [displayedProducts, setDisplayedProducts] = useState([]);
+  const [itemsPerPage] = useState(6);
+  const [pageIndex, setPageIndex] = useState(1);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+  // جلب جميع المنتجات عند التحميل الأول
+  refreshProducts();
   }, []);
 
   // initialize displayedProducts when products are loaded
@@ -187,6 +191,17 @@ export default function HomePage() {
     } else {
       setDisplayedProducts([]);
     }
+  }, [products]);
+
+  // تغيير المنتجات تلقائياً كل 10 ثواني
+  useEffect(() => {
+    if (!Array.isArray(products) || products.length === 0) return;
+    const interval = setInterval(() => {
+      // انسخ المصفوفة ثم اخلطها
+      const shuffled = [...products].sort(() => 0.5 - Math.random());
+      setDisplayedProducts(shuffled.slice(0, 3));
+    }, 10000);
+    return () => clearInterval(interval);
   }, [products]);
 
   // load more function (appends next page)
@@ -282,129 +297,132 @@ export default function HomePage() {
 
       {/* Available Products */}
 <section className="px-8 py-12">
-  <h3 className="text-center text-6xl font-bold mb-8">
-    Available Products
+  <h3 className="text-center text-5xl font-bold mb-8">
+    Processed Orders
   </h3>
   <div
     ref={containerRef}
-    className="px-4 flex flex-row flex-nowrap overflow-x-auto gap-2 gap-y-2 md:grid md:grid-cols-3 md:gap-3 md:gap-y-3 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 pb-4 md:pb-0 relative snap-x snap-mandatory scroll-smooth"
-    style={{ WebkitOverflowScrolling: 'touch' }}
+    className="px-4 pb-4 md:pb-0 relative scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100"
+    style={{
+      WebkitOverflowScrolling: 'touch',
+      display: window.innerWidth < 768 ? 'block' : 'grid',
+      gridTemplateColumns: window.innerWidth >= 768 ? 'repeat(3, 1fr)' : 'unset',
+      gap: '1rem',
+    }}
   >
-  {displayedProducts?.length > 0 ? (
+    {/* في وضع الهاتف والشاشات الصغيرة تظهر البطاقات بشكل عادي (block)، وفي الشاشات الكبيرة تظهر بشكل شبكة (grid) */}
+    {displayedProducts?.length > 0 ? (
       displayedProducts.map((order, i) => {
         const id = order.id || order._id || i;
         return (
-        <div
-          key={id}
-          onClick={() => {
-            if (typeof window !== 'undefined' && window.innerWidth < 768) {
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-              setTimeout(() => navigate(`/product-detail-view/${id}`), 300);
-              return;
-            }
-            navigate(`/product-detail-view/${id}`);
-          }}
-          className="bg-white border rounded-md shadow-sm overflow-hidden cursor-pointer hover:shadow-md p-1 w-[80%] md:w-full min-w-[220px] max-w-xs md:max-w-sm md:mx-auto flex-none mx-2 snap-start"
-        >
-          {/* صورة المنتج */}
-          <img
-            loading="lazy"
-            src={(() => {
-              const img = order.image || (order.images && order.images[0]);
-              if (!img) return '/assets/images/no_image.png';
-              if (typeof img === 'string') return img;
-              if (img.url) return img.url;
-              if (img.file && img.file.url) return img.file.url;
-              return '/assets/images/no_image.png';
-            })()}
-            alt={order.title || order.name || "Order"}
-            onError={(e) => { e.currentTarget.src = '/assets/images/no_image.png'; }}
-            className="w-full h-45 object-contain bg-gray-100"
-          />
-
-          {/* المسافرين والمشترين مع أيقونة الطائرة */}
-          <div className="flex justify-around items-center py-2">
-            {/* الشخص الأول */}
-            <div className="flex flex-col items-center">
+          <div
+            key={id}
+            onClick={() => {
+              if (typeof window !== 'undefined' && window.innerWidth < 768) {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                setTimeout(() => navigate(`/product-detail-view/${id}`), 300);
+                return;
+              }
+              navigate(`/product-detail-view/${id}`);
+            }}
+            className="bg-white rounded-xl shadow-lg hover:shadow-2xl transition-transform duration-300 transform hover:scale-105 overflow-hidden cursor-pointer w-full min-w-[240px] max-w-xs md:max-w-sm md:mx-auto mx-auto mb-6 border border-gray-100 relative group"
+          >
+            {/* شارة حالة المنتج */}
+            <span className="absolute top-3 left-3 bg-gradient-to-r from-blue-500 via-sky-400 to-blue-300 text-white text-xs font-bold px-3 py-1 rounded-full shadow-md z-10">
+              {order.status === 'fulfilled' ? 'Fulfilled' : order.status === 'available' ? 'Available' : 'Active'}
+            </span>
+            {/* صورة المنتج */}
+            <div className="flex justify-center items-center bg-gradient-to-tr from-gray-100 via-blue-50 to-gray-200 p-4">
               <img
                 loading="lazy"
-                src={order.travelerAvatar || '/assets/images/no_image.png'}
-                alt={order.travelerName || "Traveler"}
+                src={(() => {
+                  const img = order.image || (order.images && order.images[0]);
+                  if (!img) return '/assets/images/no_image.png';
+                  if (typeof img === 'string') return img;
+                  if (img.url) return img.url;
+                  if (img.file && img.file.url) return img.file.url;
+                  return '/assets/images/no_image.png';
+                })()}
+                alt={order.title || order.name || "Order"}
                 onError={(e) => { e.currentTarget.src = '/assets/images/no_image.png'; }}
-                className="w-14 h-14 rounded-full border"
+                className="w-32 h-32 object-cover rounded-2xl border-4 border-blue-200 group-hover:border-blue-400 transition-all duration-300 shadow-md"
               />
-              <span className="mt-2 px-3 py-1 text-white text-xs rounded-full bg-red-400">
-                earned ${order.travelerEarnings || 0}
-              </span>
-              <p className="mt-2 font-semibold">
-                {order.travelerName || order.traveler?.name || "Traveler"}
-              </p>
-              <p className="text-gray-500 text-sm">
-                {order.travelerLocation || "Location"}
-              </p>
             </div>
-
-            {/* أيقونة الطائرة */}
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-6 w-6 text-gray-400 rotate-45"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M10.5 6.75L4.5 12l6 5.25M19.5 12H4.5"
-              />
-            </svg>
-
-            {/* الشخص الثاني */}
-            <div className="flex flex-col items-center">
-              <img
-                loading="lazy"
-                src={order.buyerAvatar || '/assets/images/no_image.png'}
-                alt={order.buyerName || "Buyer"}
-                onError={(e) => { e.currentTarget.src = '/assets/images/no_image.png'; }}
-                className="w-14 h-14 rounded-full border"
-              />
-              <span className="mt-2 px-3 py-1 text-white text-xs rounded-full bg-green-400">
-                saved ${order.buyerSavings || 0}
-              </span>
-              <p className="mt-2 font-semibold">{order.buyerName || "Buyer"}</p>
-              <p className="text-gray-500 text-sm">
-                {order.buyerLocation || "Location"}
-              </p>
-            </div>
-          </div>
-          {/* اسم المنتج والسعر */}
-          <div className="p-2 border-t">
-            <div className="flex items-start justify-between">
-              <div>
-                <h4 className="font-semibold">{order.name || order.title || 'Product'}</h4>
-                <p className="text-sm text-gray-500">{order.description || ''}</p>
+            {/* بيانات المسافر والمشتري */}
+            <div className="flex justify-around items-center py-4 gap-2 bg-gradient-to-r from-white via-blue-50 to-white">
+              {/* المسافر */}
+              <div className="flex flex-col items-center">
+                <div className="w-16 h-16 rounded-full border-4 border-sky-300 bg-white flex items-center justify-center shadow group-hover:border-blue-500 transition-all duration-300">
+                  <img
+                    loading="lazy"
+                    src={order.travelerAvatar || order.traveler?.avatar || '/assets/images/no_image.png'}
+                    alt={order.travelerName || order.traveler?.name || "Traveler"}
+                    onError={(e) => { e.currentTarget.src = '/assets/images/no_image.png'; }}
+                    className="w-14 h-14 rounded-full object-cover"
+                  />
+                </div>
+                <span className="mt-2 px-3 py-1 text-white text-xs rounded-full bg-gradient-to-r from-blue-400 to-blue-600 shadow">
+                  earned ${order.travelerEarnings || order.traveler?.earnings || 0}
+                </span>
+                <p className="mt-2 font-semibold text-blue-700 text-sm">
+                  {order.travelerName || order.traveler?.fullName || order.traveler?.name || order.traveler?.email || "Traveler"}
+                </p>
+                <p className="text-gray-500 text-xs">
+                  {order.traveler?.location || order.travelerLocation || order.traveler_user?.location || order.traveler?.profileLocation || "No location"}
+                </p>
               </div>
-              <div className="text-right">
-                <div className="text-lg font-bold">{order.currency || '$'}{order.price ?? 0}</div>
+              {/* أيقونة الطائرة */}
+              <PaperAirplaneIcon className="h-7 w-7 text-blue-400 group-hover:text-blue-600 transition-transform duration-300 rotate-45" />
+              {/* المشتري */}
+              <div className="flex flex-col items-center">
+                <div className="w-16 h-16 rounded-full border-4 border-green-300 bg-white flex items-center justify-center shadow group-hover:border-green-500 transition-all duration-300">
+                  <img
+                    loading="lazy"
+                    src={order.buyerAvatar || order.buyer?.avatar || '/assets/images/no_image.png'}
+                    alt={order.buyerName || order.buyer?.fullName || order.buyer?.name || order.buyer?.email || "Buyer"}
+                    onError={(e) => { e.currentTarget.src = '/assets/images/no_image.png'; }}
+                    className="w-14 h-14 rounded-full object-cover"
+                  />
+                </div>
+                <span className="mt-2 px-3 py-1 text-white text-xs rounded-full bg-gradient-to-r from-green-400 to-green-600 shadow">
+                  saved ${order.buyerSavings || order.buyer?.savings || 0}
+                </span>
+                <p className="mt-2 font-semibold text-green-700 text-sm">
+                  {order.buyerName || order.buyer?.fullName || order.buyer?.name || order.buyer?.email || "Buyer"}
+                </p>
+                <p className="text-gray-500 text-xs">
+                  {order.buyer?.location || order.buyerLocation || "No location"}
+                </p>
               </div>
             </div>
-            <div className="mt-2 flex justify-end gap-2">
-              <button
-                onClick={(e) => { e.stopPropagation(); if (typeof window !== 'undefined' && window.innerWidth < 768) { window.scrollTo({ top: 0, behavior: 'smooth' }); setTimeout(() => navigate(`/product-detail-view/${id}`), 300); return; } navigate(`/product-detail-view/${id}`); }}
-                className="px-3 py-1 text-sm border rounded hover:bg-gray-100"
-              >
-                View
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); if (typeof window !== 'undefined' && window.innerWidth < 768) { window.scrollTo({ top: 0, behavior: 'smooth' }); setTimeout(() => navigate(`/product-detail-view/${id}`, { state: { action: 'request' } }), 300); return; } navigate(`/product-detail-view/${id}`, { state: { action: 'request' } }); }}
-                className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-              >
-                Request
-              </button>
-            </div>
+            {/* اسم المنتج والسعر */}
+            {/*
+            <div className="p-4 border-t bg-white">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h4 className="font-semibold text-lg text-gray-800">{order.name || order.title || 'Product'}</h4>
+                  <p className="text-sm text-gray-500 mt-1">{order.description || ''}</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-xl font-bold text-blue-600">{order.currency || '$'}{order.price ?? 0}</div>
+                </div>
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={(e) => { e.stopPropagation(); if (typeof window !== 'undefined' && window.innerWidth < 768) { window.scrollTo({ top: 0, behavior: 'smooth' }); setTimeout(() => navigate(`/product-detail-view/${id}`), 300); return; } navigate(`/product-detail-view/${id}`); }}
+                  className="px-4 py-2 text-sm border rounded-lg hover:bg-blue-50 text-blue-600 font-semibold transition"
+                >
+                  View
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); if (typeof window !== 'undefined' && window.innerWidth < 768) { window.scrollTo({ top: 0, behavior: 'smooth' }); setTimeout(() => navigate(`/product-detail-view/${id}`, { state: { action: 'request' } }), 300); return; } navigate(`/product-detail-view/${id}`, { state: { action: 'request' } }); }}
+                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold transition"
+                >
+                  Request
+                </button>
+              </div>
+            </div>*/}
           </div>
-        </div>
         );
       })
     ) : (
@@ -424,7 +442,6 @@ export default function HomePage() {
     </div>
   )}
 </section>
-
 
   
   <HowItWorksSection />

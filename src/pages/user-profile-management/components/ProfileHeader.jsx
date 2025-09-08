@@ -21,6 +21,21 @@ const ProfileHeader = ({ profileData, onUpdate }) => {
     setIsEditing(false);
   };
 
+  // حساب نسبة اكتمال الملف الشخصي بناءً على الحقول المعبأة
+  const profileFields = [
+    profileData?.avatar,
+    profileData?.name,
+    profileData?.email,
+    profileData?.bio,
+    profileData?.location,
+    profileData?.languages && profileData?.languages.length > 0
+  ];
+  const filledFields = profileFields.filter(Boolean).length;
+  const percent = Math.round((filledFields / profileFields.length) * 100);
+  // حساب قيمة strokeDashoffset بناءً على النسبة
+  const circleLength = 176;
+  const dashOffset = circleLength - (circleLength * percent) / 100;
+
   return (
     <div className="bg-card rounded-lg border border-border p-6 mb-6">
       <div className="flex flex-col md:flex-row items-center md:items-start space-y-4 md:space-y-0 md:space-x-6">
@@ -136,13 +151,13 @@ const ProfileHeader = ({ profileData, onUpdate }) => {
                 stroke="currentColor"
                 strokeWidth="4"
                 fill="none"
-                strokeDasharray="176"
-                strokeDashoffset="44"
+                strokeDasharray={circleLength}
+                strokeDashoffset={dashOffset}
                 className="text-success"
               />
             </svg>
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-sm font-semibold text-foreground">75%</span>
+              <span className="text-sm font-semibold text-foreground">{percent}%</span>
             </div>
           </div>
           <p className="text-xs text-muted-foreground mt-1">Profile Complete</p>

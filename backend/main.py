@@ -1,6 +1,7 @@
-
-
-from fastapi import FastAPI, Depends, HTTPException, Form, Body, Query, WebSocket, WebSocketDisconnect
+# جلب طلب واحد عبر معرفه
+from fastapi import Path
+from fastapi import Body
+from fastapi import FastAPI, Depends, HTTPException, Form, Body, Query, WebSocket, WebSocketDisconnect, File, UploadFile
 from typing import Any
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,7 +22,7 @@ from fastapi.responses import FileResponse
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://valiko.vercel.app"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -90,22 +91,152 @@ async def update_request_status(request_id: str = Path(...), status: str = Body(
         updated = False
         for pid in possible_ids:
             query = {"_id": pid, "traveler_id": traveler_id}
-            print(f"[UPDATE_REQUEST_STATUS] Trying query: {query}")
             result = await db.requests.update_one(query, {"$set": {"status": status}})
-            print(f"[UPDATE_REQUEST_STATUS] matched={result.matched_count} modified={result.modified_count}")
             if result.modified_count == 1:
                 updated = True
                 break
         if updated:
+            # لا يتم تغيير حالة المنتج المحجوز تلقائياً عند رفض أو قبول الطلب
+            # المنتج يبقى في حالة 'reserved' حتى يغيرها المسافر يدوياً من خلال إجراء منفصل
             return {"ok": True, "status": status}
         else:
             raise HTTPException(status_code=404, detail="Request not found or not owned by traveler")
     except Exception as e:
-        print(f"[UPDATE_REQUEST_STATUS] error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    # جلب بيانات الملف الشخصي للمستخدم الحالي (كل الحقول)
+@app.get("/api/profile")
+async def get_profile(current_user: dict = Depends(get_current_user)):
+    user_id = current_user["_id"]
+    user = await db.users.find_one({"_id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    user["_id"] = str(user["_id"])
+    return user
+@app.patch("/api/products/mark-fulfilled")
+async def mark_product_fulfilled(payload: Any = Body(...), current_user: dict = Depends(get_current_user)):
+    """
+    تغيير حالة المنتج إلى fulfilled من طرف المسافر فقط
+    يقبل body: { product_id }
+    """
+    user_id = str(current_user["_id"])
+    product_id = None
+    try:
+        if isinstance(payload, str):
+            product_id = payload
+        elif isinstance(payload, dict):
+            product_id = payload.get('product_id') or payload.get('productId') or payload.get('id') or payload.get('product')
+            if isinstance(product_id, dict):
+                product_id = product_id.get('id') or product_id.get('_id')
+    except Exception:
+        product_id = None
+    if not product_id:
+        raise HTTPException(status_code=400, detail='product_id is required in body')
+    from bson import ObjectId
+    tried = []
+    success = False
+    last_err = None
+    possible_ids = []
+    try:
+        if ObjectId.is_valid(str(product_id)):
+            possible_ids.append(ObjectId(product_id))
+    except Exception:
+        pass
+    possible_ids.append(product_id)
+    possible_user_ids = [user_id]
+    try:
+        if ObjectId.is_valid(str(user_id)):
+            possible_user_ids.append(ObjectId(str(user_id)))
+    except Exception:
+        pass
+    print(f"[MARK_FULFILLED] product_id received: {product_id}, trying ids: {possible_ids}, user_id: {user_id}")
+    for pid in possible_ids:
+        for uid in possible_user_ids:
+            try:
+                tried.append({'product_id': pid, 'user_id': uid})
+                result = await db.products.update_one({"_id": pid, "user_id": uid}, {"$set": {"isActive": False, "status": "fulfilled"}})
+                print(f"[MARK_FULFILLED] try pid={pid} uid={uid} matched={result.matched_count} modified={result.modified_count}")
+                if result.modified_count and result.modified_count > 0:
+                    success = True
+                    break
+            except Exception as e:
+                last_err = e
+                print(f"[MARK_FULFILLED] error trying pid={pid} uid={uid}: {e}")
+        if success:
+            break
+    if not success:
+        detail_msg = f"Product not found or not owned by user. Tried variants: {tried}"
+        print(f"[MARK_FULFILLED] FAILED: {detail_msg}; last_err={last_err}")
+        raise HTTPException(status_code=404, detail=detail_msg)
+    if result.modified_count == 1:
+        try:
+            await broadcast_to_user(user_id, {"type": "product_update", "action": "fulfilled", "product": {"id": product_id}})
+        except Exception as e:
+            print('[BROADCAST_PRODUCT_FULFILLED] failed', e)
+        return {"msg": "Product marked as fulfilled."}
+    else:
+        raise HTTPException(status_code=404, detail="Product not found or not owned by user")
 
+@app.get("/api/requests/{request_id}")
+async def get_request_by_id(request_id: str, current_user: dict = Depends(get_current_user)):
+    from bson import ObjectId
+    query = {"_id": ObjectId(request_id) if ObjectId.is_valid(request_id) else request_id}
+    req = await db.requests.find_one(query)
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    req["_id"] = str(req["_id"])
+    return req
 
+# تحديث بيانات طلب المشتري عبر معرف الطلب
 
+from fastapi import Form, UploadFile, File
+@app.patch("/api/requests/{request_id}")
+async def update_buyer_request(
+    request_id: str,
+    product_name: str = Form(None),
+    description: str = Form(None),
+    quantity: int = Form(None),
+    category: str = Form(None),
+    price: float = Form(None),
+    type: str = Form(None),
+    product_id: str = Form(None),
+    image: UploadFile = File(None),
+    current_user: dict = Depends(get_current_user)
+):
+    from bson import ObjectId
+    user_id = str(current_user["_id"])
+    query_id = ObjectId(request_id) if ObjectId.is_valid(str(request_id)) else request_id
+    req = await db.requests.find_one({"_id": query_id})
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if str(req.get("buyer_id")) != user_id:
+        raise HTTPException(status_code=403, detail="You do not have permission to edit this request")
+    update_data = {}
+    if product_name is not None:
+        update_data["product_name"] = product_name
+    if description is not None:
+        update_data["description"] = description
+    if quantity is not None:
+        update_data["quantity"] = quantity
+    if category is not None:
+        update_data["category"] = category
+    if price is not None:
+        update_data["price"] = price
+    if type is not None:
+        update_data["type"] = type
+    if product_id is not None:
+        update_data["product_id"] = product_id
+    # معالجة الصورة: تخزينها كـ base64 في قاعدة البيانات لطلبات المشتري فقط
+    if image is not None:
+        img_bytes = await image.read()
+        import base64
+        img_base64 = base64.b64encode(img_bytes).decode("utf-8")
+        update_data["image"] = img_base64
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+    result = await db.requests.update_one({"_id": query_id}, {"$set": update_data})
+    if result.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Request not updated")
+    return {"message": "Request updated successfully"}
 # نقطة نهاية للتحقق من وجود المنتجات
 @app.get("/api/products/check")
 async def check_products():
@@ -129,69 +260,125 @@ async def check_products():
         raise HTTPException(status_code=500, detail=str(e))
 
         # إنشاء طلب جديد
-# إنشاء طلب منتج جديد
-@app.post("/api/requests")
-async def create_request(request: dict = Body(...), current_user: dict = Depends(get_current_user)):
+
+# طلب منتج خاص بالمسافر (buyer-to-traveler request)
+@app.post("/api/requests/traveler")
+async def create_traveler_request(
+    product_id: str = Form(...),
+    traveler_id: str = Form(...),
+    quantity: int = Form(1),
+    current_user: dict = Depends(get_current_user)
+):
     try:
-        buyer_id = str(current_user["_id"])
-        product_id = request.get("product_id")
-        traveler_id = request.get("traveler_id")
-        quantity = request.get("quantity", 1)
-        if not product_id or not traveler_id:
-            raise HTTPException(status_code=400, detail="product_id and traveler_id are required")
+        user_id = str(current_user["_id"])
+        role = current_user.get("role") or current_user.get("userRole")
+        if role != "buyer":
+            raise HTTPException(status_code=403, detail="Only buyers can request products from travelers.")
         doc = {
             "product_id": str(product_id),
             "traveler_id": str(traveler_id),
-            "buyer_id": buyer_id,
+            "buyer_id": user_id,
             "quantity": quantity,
+            "type": "traveler_request",
             "status": "pending",
             "createdAt": datetime.utcnow()
         }
         res = await db.requests.insert_one(doc)
         doc["_id"] = str(res.inserted_id)
-        # إشعار للمسافر (يمكنك إضافة منطق إشعار هنا إذا رغبت)
         return {"ok": True, "request": doc}
     except Exception as e:
-        print(f"[CREATE_REQUEST] error: {e}")
+        print(f"[CREATE_TRAVELER_REQUEST] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# طلب منتج خاص بالمشتري (buyer self-request)
+@app.post("/api/requests")
+async def create_buyer_request(
+    product_name: str = Form(...),
+    description: str = Form(...),
+    quantity: int = Form(...),
+    category: str = Form(...),
+    image: UploadFile = File(None),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        user_id = str(current_user["_id"])
+        role = current_user.get("role") or current_user.get("userRole")
+        if role != "buyer":
+            raise HTTPException(status_code=403, detail="Only buyers can create product requests.")
+        doc = {
+            "product_name": product_name,
+            "description": description,
+            "quantity": quantity,
+            "category": category,
+            "buyer_id": user_id,
+            "type": "buyer_request",
+            "status": "pending",
+            "createdAt": datetime.utcnow()
+        }
+        if image:
+            img_bytes = await image.read()
+            import base64
+            img_base64 = base64.b64encode(img_bytes).decode("utf-8")
+            doc["image"] = img_base64
+        res = await db.requests.insert_one(doc)
+        doc["_id"] = str(res.inserted_id)
+        return {"ok": True, "request": doc}
+    except Exception as e:
+        print(f"[CREATE_BUYER_REQUEST] error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 from fastapi import Request
 @app.get("/api/requests")
 async def get_requests(request: Request, current_user: dict = Depends(get_current_user)):
-    traveler_id = str(current_user["_id"])
+    user_id = str(current_user["_id"])
+    role = current_user.get("role") or current_user.get("userRole")
     product_id = request.query_params.get("product_id")
-    query = {"traveler_id": traveler_id, "status": "pending"}
+    req_type = request.query_params.get("type")
+    query = {"status": "pending"}
+    # إذا كان المستخدم Buyer جلب الطلبات عبر buyer_id، إذا كان Traveler جلبها عبر traveler_id
+    if role == "buyer":
+        query["buyer_id"] = user_id
+    elif role == "traveler":
+        query["traveler_id"] = user_id
     if product_id:
         query["product_id"] = product_id
+    if req_type:
+        query["type"] = req_type
     requests = []
     async for req in db.requests.find(query):
         req["_id"] = str(req.get("_id"))
         req["product_id"] = str(req.get("product_id", ""))
         req["buyer_id"] = str(req.get("buyer_id", ""))
         req["traveler_id"] = str(req.get("traveler_id", ""))
+        req["type"] = req.get("type", "")
         # جلب اسم المشتري من قاعدة بيانات المستخدمين
-        buyer = await db.users.find_one({"_id": ObjectId(req["buyer_id"])}) if ObjectId.is_valid(req["buyer_id"]) else None
+        buyer = await db.users.find_one({"_id": ObjectId(req["buyer_id"])} ) if ObjectId.is_valid(req["buyer_id"]) else None
         req["buyerName"] = buyer["fullName"] if buyer and "fullName" in buyer else req["buyer_id"]
         requests.append(req)
     return requests
-async def get_requests(current_user: dict = Depends(get_current_user)):
-    traveler_id = str(current_user["_id"])
+async def get_requests(request: Request, current_user: dict = Depends(get_current_user)):
+    user_id = str(current_user["_id"])
+    role = current_user.get("role") or current_user.get("userRole")
+    product_id = request.query_params.get("product_id")
+    req_type = request.query_params.get("type")
+    query = {"status": "pending"}
+    # إذا كان المستخدم Buyer جلب الطلبات عبر buyer_id، إذا كان Traveler جلبها عبر traveler_id
+    if role == "buyer":
+        query["buyer_id"] = user_id
+    elif role == "traveler":
+        query["traveler_id"] = user_id
+    if product_id:
+        query["product_id"] = product_id
+    if req_type:
+        query["type"] = req_type
+    # جلب فقط الطلبات من نوع reserve إذا كان المسافر
+    if role == "traveler":
+        query["type"] = "reserve"
     requests = []
-    async for req in db.requests.find({"traveler_id": traveler_id}):
+    async for req in db.requests.find(query):
         req["_id"] = str(req.get("_id"))
-        req["product_id"] = str(req.get("product_id", ""))
-        req["buyer_id"] = str(req.get("buyer_id", ""))
-        req["traveler_id"] = str(req.get("traveler_id", ""))
-        # يمكنك إضافة تحويل لأي معرفات أخرى إذا وجدت
         requests.append(req)
     return requests
-
-# تغيير حالة المنتج إلى مكتمل
-@app.post("/api/products/mark-fulfilled")
-async def mark_product_fulfilled(payload: Any = Body(...), current_user: dict = Depends(get_current_user)):
-    # Accept multiple payload shapes: { product_id }, { productId }, { id }, or raw string body
-    user_id = str(current_user["_id"])
-    product_id = None
     try:
         if isinstance(payload, str):
             product_id = payload
@@ -256,6 +443,13 @@ async def mark_product_fulfilled(payload: Any = Body(...), current_user: dict = 
     else:
         raise HTTPException(status_code=404, detail="Product not found or not owned by user")
 # ...existing code...
+@app.get("/api/dashboard/activities")
+async def get_dashboard_activities(current_user: dict = Depends(get_current_user)):
+    """
+    إرجاع قائمة الأنشطة للمستخدم الحالي (يمكنك تخصيصها لاحقاً)
+    حالياً يرجع قائمة فارغة.
+    """
+    return []
 
 # تحديث بيانات الملف الشخصي للمستخدم الحالي
 @app.put("/api/profile")
@@ -527,11 +721,12 @@ async def get_requests(request: Request, current_user: dict = Depends(get_curren
             try:
                 items.append({
                     "id": str(d.get("_id")) if d.get("_id") is not None else None,
-                    "productId": str(d.get("product_id") or d.get("productId") or d.get("product") or "") ,
+                    "productId": str(d.get("product_id") or d.get("productId") or d.get("product") or ""),
                     "productName": d.get("product_name") or d.get("productName") or d.get("title") or "",
                     "travelerName": d.get("travelerName") or d.get("traveler_name") or d.get("traveler") or "",
                     "travelerAvatar": d.get("travelerAvatar") or d.get("traveler_avatar") or None,
                     "status": d.get("status") or "pending",
+                    "type": d.get("type", ""),
                     "price": d.get("price") or d.get("offer") or d.get("amount") or None,
                     "message": d.get("message") or d.get("note") or "",
                     "requestDate": d.get("createdAt") or d.get("requestDate") or None,
@@ -589,6 +784,11 @@ async def get_products(
     sortBy: str = None,
     order: str = "desc"
 ):
+
+    # Debug: طباعة معلومات الربط للمسافر
+    # moved debug prints here; per-item variables like `product` and `traveler_info`
+    # are only available inside the loop below, so printing them at function entry
+    # would raise NameError — keep debug logging inside the loop where appropriate.
     products = []
     query = {}
     or_clauses = []
@@ -642,32 +842,64 @@ async def get_products(
 
     # ترتيب النتائج
     allowed_sorts = ["createdAt", "price", "title", "category", "departureAirport", "arrivalAirport"]
-    # دعم التوافق مع sortBy أو sort أو sort=relevance
     sort_field = "createdAt"
     if sortBy and sortBy in allowed_sorts:
         sort_field = sortBy
-    # دعم بعض الواجهات ترسل sort=relevance أو قيم غير مدعومة
     if (sortBy and sortBy not in allowed_sorts) or (sortBy == "relevance"):
         sort_field = "createdAt"
     sort_order = -1 if order == "desc" else 1
     cursor = db.products.find(query).sort(sort_field, sort_order)
     async for product in cursor:
         product["_id"] = str(product["_id"])
-        # traveler info
+        # ...existing code for product card...
         traveler = product.get("traveler", {})
+        user = product.get("user", {})
         traveler_info = {
-            "avatar": traveler.get("avatar", "https://ui-avatars.com/api/?name=Traveler"),
-            "name": traveler.get("name", "Traveler"),
-            "fullName": traveler.get("fullName", traveler.get("name", "Traveler")),
-            "rating": traveler.get("rating", 4),
-            "reviewCount": traveler.get("reviewCount", 12)
+            "avatar": traveler.get("avatar") or user.get("avatar") or "https://ui-avatars.com/api/?name=Traveler",
+            "name": traveler.get("name") or user.get("name") or "Traveler",
+            "fullName": traveler.get("fullName") or user.get("fullName") or traveler.get("name") or user.get("name") or "Traveler",
+            "rating": traveler.get("rating") or user.get("rating") or 4,
+            "reviewCount": traveler.get("reviewCount") or user.get("reviewCount") or 12,
+            "location": traveler.get("location") or user.get("location") or None
         }
-        # route info
+        if not traveler_info["location"]:
+            traveler_id = product.get("traveler_id")
+            if traveler_id:
+                try:
+                    if isinstance(traveler_id, str):
+                        traveler_obj_id = ObjectId(traveler_id)
+                    else:
+                        traveler_obj_id = traveler_id
+                    traveler_user = await db.users.find_one({"_id": traveler_obj_id})
+                    if traveler_user:
+                        traveler_location = traveler_user.get("location", "")
+                        traveler_info["location"] = traveler_location
+                        traveler["location"] = traveler_location
+                except Exception as e:
+                    print(f"[GET_PRODUCTS] Error fetching traveler location: {e}")
+        buyer_info = None
+        buyer_id = product.get("buyer_id")
+        if buyer_id:
+            try:
+                if isinstance(buyer_id, str):
+                    buyer_obj_id = ObjectId(buyer_id)
+                else:
+                    buyer_obj_id = buyer_id
+                buyer = await db.users.find_one({"_id": buyer_obj_id})
+                if buyer:
+                    buyer_info = {
+                        "fullName": buyer.get("fullName"),
+                        "name": buyer.get("name"),
+                        "email": buyer.get("email"),
+                        "avatar": buyer.get("avatar"),
+                        "location": buyer.get("location", "")
+                    }
+            except Exception as e:
+                print(f"[GET_PRODUCTS] Error fetching buyer: {e}")
         route = {
             "from": product.get("departureAirport", "Unknown"),
             "to": product.get("arrivalAirport", "Unknown")
         }
-        # travel date (support multiple shapes)
         travel_date = ""
         departure_date = None
         arrival_date = None
@@ -679,11 +911,9 @@ async def get_products(
         elif isinstance(travel_dates, str):
             travel_date = travel_dates
             departure_date = travel_dates
-        # بطاقة المنتج
         images_list = product.get("images") if product.get("images") else ([product.get("image")] if product.get("image") else [])
         pickup_options = product.get("pickupOptions", []) or []
         pickup_location = product.get("pickupLocation") or (pickup_options[0].get("location") if pickup_options and isinstance(pickup_options[0], dict) else None)
-
         card = {
             "id": product["_id"],
             "name": product.get("title") or product.get("name") or "No Title",
@@ -711,9 +941,57 @@ async def get_products(
             "reviews": traveler_info.get("reviewCount", 12),
             "departure": route.get("from", product.get("departureAirport", "Unknown")),
             "arrival": route.get("to", product.get("arrivalAirport", "Unknown")),
-            "isSaved": False
+            "isSaved": False,
+            "buyer": buyer_info
         }
         products.append(card)
+
+    # جلب طلبات المشترين المنشورة ودمجها مع المنتجات
+    requests_query = {"type": "buyer_request", "status": {"$in": ["pending", "active"]}}
+    # دعم البحث بالاسم أو الفئة أو الكمية أو الوصف
+    if q:
+        requests_query["$or"] = [
+            {"product_name": {"$regex": q, "$options": "i"}},
+            {"description": {"$regex": q, "$options": "i"}},
+            {"category": {"$regex": q, "$options": "i"}}
+        ]
+    if category:
+        requests_query["category"] = {"$regex": category, "$options": "i"}
+    cursor_req = db.requests.find(requests_query)
+    async for req in cursor_req:
+        req_id = str(req.get("_id"))
+        buyer_id = req.get("buyer_id")
+        buyer_info = None
+        if buyer_id:
+            try:
+                buyer_obj_id = ObjectId(buyer_id) if isinstance(buyer_id, str) else buyer_id
+                buyer = await db.users.find_one({"_id": buyer_obj_id})
+                if buyer:
+                    buyer_info = {
+                        "fullName": buyer.get("fullName"),
+                        "name": buyer.get("name"),
+                        "email": buyer.get("email"),
+                        "avatar": buyer.get("avatar"),
+                        "location": buyer.get("location", "")
+                    }
+            except Exception as e:
+                print(f"[GET_PRODUCTS] Error fetching buyer for request: {e}")
+        card = {
+            "id": req_id,
+            "type": "buyer_request",
+            "product_name": req.get("product_name", "طلب بدون اسم"),
+            "description": req.get("description", "لا يوجد وصف"),
+            "quantity": req.get("quantity", 1),
+            "category": req.get("category", ""),
+            "image": req.get("image", "https://placehold.co/400x300?text=Request"),
+            "isActive": True,
+            "isUrgent": req.get("isUrgent", False),
+            "buyer": buyer_info,
+            "status": req.get("status", "pending"),
+            "createdAt": req.get("createdAt"),
+        }
+        products.append(card)
+
     return products
 
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -901,52 +1179,36 @@ async def login(
     return {"access_token": access_token, "token_type": "bearer", "role": user["role"], "email": user["email"]}
 
 @app.get("/api/dashboard/stats")
-async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
-    role = current_user.get("role")
+async def get_dashboard_active_listings(trip_id: str | None = None, current_user: dict = Depends(get_current_user)):
+    """
+    Return all listings for the current user (active + reserved).
+    If trip_id is provided, exclude listings that are already linked to a different trip.
+    """
     user_id = str(current_user["_id"])
-    if role == "traveler":
-        # عدد العروض النشطة
-        active_listings = await db.products.count_documents({"user_id": user_id, "isActive": True})
-        # عدد الطلبات المعلقة (مثال: المنتجات التي لها طلبات لم تُنفذ بعد)
-        pending_requests = await db.products.count_documents({"user_id": user_id, "requestCount": {"$gt": 0}})
-        # عدد الرحلات القادمة (حسب تاريخ المغادرة)
-        today = datetime.utcnow().date().isoformat()
-        upcoming_trips = await db.products.count_documents({"user_id": user_id, "travelDates.departure": {"$gte": today}})
-        # مجموع الأرباح (جمع price لكل منتج تم بيعه)
-        total_earnings = 0
-        async for product in db.products.find({"user_id": user_id, "isActive": False, "isSold": True}):
-            total_earnings += float(product.get("price", 0))
-        return {
-            "activeListings": active_listings,
-            "pendingRequests": pending_requests,
-            "upcomingTrips": upcoming_trips,
-            "totalEarnings": total_earnings
-        }
-    elif role == "buyer":
-        active_requests = await db.requests.count_documents({"buyer_id": user_id, "status": "pending"})
-        saved_products = await db.saved_items.count_documents({"user_id": user_id})
-        completed_purchases = await db.products.count_documents({"buyer_id": user_id, "isSold": True})
-        total_spent = 0
-        async for product in db.products.find({"buyer_id": user_id, "isSold": True}):
-            total_spent += float(product.get("price", 0))
-        return {
-            "activeRequests": active_requests,
-            "savedProducts": saved_products,
-            "completedPurchases": completed_purchases,
-            "totalSpent": total_spent
-        }
-    elif role == "admin":
-        users = await db.users.count_documents({})
-        orders = await db.products.count_documents({})
-        revenue = 0
-        async for product in db.products.find({"isSold": True}):
-            revenue += float(product.get("price", 0))
-        return {
-            "users": users,
-            "orders": orders,
-            "revenue": revenue
-        }
-    return {}
+    listings = []
+    # جلب جميع المنتجات الخاصة بالمسافر (النشطة والمحجوزة)
+    query = {"user_id": user_id, "status": {"$in": ["active", "reserved"]}}
+    async for product in db.products.find(query):
+        prod_trip = product.get("trip_id")
+        if prod_trip and trip_id and str(prod_trip) != str(trip_id):
+            continue
+        product["_id"] = str(product["_id"])
+        raw_image = product.get("image", "") or ""
+        img = ""
+        try:
+            if isinstance(raw_image, dict):
+                file_val = raw_image.get("file") or raw_image.get("url") or raw_image.get("name")
+                if isinstance(file_val, str):
+                    img = file_val
+                else:
+                    img = ""
+            elif isinstance(raw_image, str):
+                img = raw_image
+        except Exception:
+            img = ""
+        product["image"] = img
+        listings.append(product)
+    return listings
 @app.get("/api/auth/me", response_model=UserOut)
 async def get_me(current_user: dict = Depends(get_current_user), token: str = Depends(oauth2_scheme)):
     print("[AUTH_ME] Token received:", token)
@@ -1218,6 +1480,38 @@ async def update_product(product_id: str, product: dict, current_user: dict = De
             print(f"[UPDATE_PRODUCT] trip linking error: {e}")
 
 # إشعارات المسافر من قاعدة البيانات
+from fastapi import Body
+from bson import ObjectId
+
+# حجز منتج
+@app.post("/api/products/{product_id}/reserve")
+async def reserve_product(product_id: str, current_user: dict = Depends(get_current_user)):
+    user_id = str(current_user["_id"])
+    product = await db.products.find_one({"_id": ObjectId(product_id)})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    if product.get("status") == "reserved":
+        raise HTTPException(status_code=400, detail="Product already reserved")
+    # تحديث حالة المنتج إلى محجوز وربطه بالمشتري
+    result = await db.products.update_one(
+        {"_id": ObjectId(product_id)},
+        {"$set": {"status": "reserved", "reserved_by": user_id}}
+    )
+    # إضافة طلب جديد في مجموعة requests ليظهر في Pending Requests لدى المسافر
+    traveler_id = str(product.get("user_id"))
+    request_doc = {
+        "product_id": product_id,
+        "buyer_id": user_id,
+        "traveler_id": traveler_id,
+        "status": "pending",
+        "type": "reserve",
+        "createdAt": datetime.utcnow()
+    }
+    await db.requests.insert_one(request_doc)
+    if result.modified_count == 1:
+        return {"msg": "Product reserved successfully", "id": product_id}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to reserve product")
 @app.get("/api/dashboard/notifications")
 async def get_dashboard_notifications(current_user: dict = Depends(get_current_user)):
     user_id = str(current_user["_id"])

@@ -4,24 +4,32 @@ import Button from '../../../components/ui/Button';
 
 const AccountSettingsTab = ({ profileData, onUpdate }) => {
   const [isLoading, setIsLoading] = useState(false);
-  const [emailSettings, setEmailSettings] = useState({
+  const [emailSettings, setEmailSettings] = useState(profileData?.emailSettings || {
     newListings: true,
     priceAlerts: true,
     messages: true,
     marketing: false
   });
-  const [pushSettings, setPushSettings] = useState({
+  const [pushSettings, setPushSettings] = useState(profileData?.pushSettings || {
     newMessages: true,
     orderUpdates: true,
     promotions: false
   });
-  const [privacySettings, setPrivacySettings] = useState({
+  const [privacySettings, setPrivacySettings] = useState(profileData?.privacySettings || {
     profileVisibility: 'public',
     showEmail: false,
     showPhone: false,
     allowContact: true
   });
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(profileData?.twoFactorEnabled || false);
+
+  // تحديث الحقول عند تغير profileData
+  React.useEffect(() => {
+    if (profileData?.emailSettings) setEmailSettings(profileData.emailSettings);
+    if (profileData?.pushSettings) setPushSettings(profileData.pushSettings);
+    if (profileData?.privacySettings) setPrivacySettings(profileData.privacySettings);
+    if (profileData?.twoFactorEnabled !== undefined) setTwoFactorEnabled(profileData.twoFactorEnabled);
+  }, [profileData]);
 
   const handleEmailChange = async () => {
     setIsLoading(true);
@@ -66,6 +74,18 @@ const AccountSettingsTab = ({ profileData, onUpdate }) => {
       ...prev,
       [setting]: value
     }));
+  };
+
+  const handleSave = async () => {
+    setIsLoading(true);
+    // إرسال جميع الإعدادات المجمعة إلى onUpdate
+    await onUpdate({
+      emailSettings,
+      pushSettings,
+      privacySettings,
+      twoFactorEnabled
+    });
+    setIsLoading(false);
   };
 
   return (
@@ -190,7 +210,6 @@ const AccountSettingsTab = ({ profileData, onUpdate }) => {
       {/* Privacy Settings */}
       <div className="bg-card rounded-lg border border-border p-6">
         <h3 className="text-lg font-semibold text-foreground mb-4">Privacy Settings</h3>
-        
         <div className="space-y-4">
           {/* Profile Visibility */}
           <div>
@@ -207,7 +226,6 @@ const AccountSettingsTab = ({ profileData, onUpdate }) => {
               <option value="private">Private - Only visible in transactions</option>
             </select>
           </div>
-
           {/* Contact Information Visibility */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -225,7 +243,6 @@ const AccountSettingsTab = ({ profileData, onUpdate }) => {
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
               </label>
             </div>
-
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-foreground">Show Phone Number</p>
@@ -241,7 +258,6 @@ const AccountSettingsTab = ({ profileData, onUpdate }) => {
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
               </label>
             </div>
-
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-foreground">Allow Direct Contact</p>
@@ -259,6 +275,12 @@ const AccountSettingsTab = ({ profileData, onUpdate }) => {
             </div>
           </div>
         </div>
+      </div>
+      {/* زر الحفظ */}
+      <div className="flex justify-end pt-6">
+        <Button variant="default" onClick={handleSave} loading={isLoading}>
+          Save Changes
+        </Button>
       </div>
     </div>
   );

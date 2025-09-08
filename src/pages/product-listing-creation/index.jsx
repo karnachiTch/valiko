@@ -12,7 +12,10 @@ import Button from '../../components/ui/Button';
 import api from '../../api';
 
 import { useLocation } from 'react-router-dom';
+import useAuth from '../../hooks/useAuth';
+
 const ProductListingCreation = () => {
+  const { loading, isAuthenticated, user: authUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [currentStep, setCurrentStep] = useState(1);
@@ -105,18 +108,10 @@ const ProductListingCreation = () => {
     return () => clearInterval(autoSaveInterval);
   }, [isDirty, formData]);
 
-  // ✅ جلب بيانات المستخدم من API (مرة وحدة فقط)
+  // استخدم بيانات المستخدم من useAuth إذا متوفرة
   useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const res = await api.get('/api/auth/me');
-        setUser(res.data);
-      } catch (err) {
-        setUser(null);
-      }
-    };
-    fetchUser();
-  }, []);
+    if (authUser) setUser(authUser);
+  }, [authUser]);
 
   // if tripId provided, fetch trip details for confirmation banner
   useEffect(() => {
@@ -148,7 +143,7 @@ const ProductListingCreation = () => {
   const saveDraft = async () => {
     try {
       if (editId) {
-        // إذا كنا في وضع التعديل، احفظ التعديلات مباشرة في قاعدة البيانات
+        // إذا كنا في وضع التعديل، اSave Changes مباشرة في قاعدة البيانات
         const token = localStorage.getItem('accessToken');
         const headers = { Authorization: `Bearer ${token}` };
         const productData = {
@@ -488,18 +483,33 @@ const ProductListingCreation = () => {
     }
   };
 
+
+  // إصلاح التوجيه لصفحة تسجيل الدخول بشكل احترافي
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      navigate('/login');
+    }
+  }, [loading, isAuthenticated, navigate]);
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center text-lg">جاري التحميل...</div>;
+  }
+  if (!isAuthenticated) {
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <RoleBasedNavigation userRole="traveler" user={user} />
       <div className="pt-16 lg:pt-16">
         <ContextualActionBar
-          title="Create Product Listing"
+          title={editId ? "تعديل الطلب" : "إنشاء طلب منتج جديد"}
           showBackButton={true}
           onSave={saveDraft}
           onCancel={handleCancel}
           isDirty={isDirty}
           isLoading={isLoading}
-          actions={[{ label: 'Save Draft', onClick: saveDraft, icon: 'Save', variant: 'outline' }]}
+          actions={editId ? [{ label: 'حفظ التعديلات', onClick: saveDraft, icon: 'Edit', variant: 'default' }] : [{ label: 'Save Draft', onClick: saveDraft, icon: 'Save', variant: 'outline' }]}
         />
 
         <div className="container mx-auto px-4 py-8">
@@ -556,39 +566,52 @@ const ProductListingCreation = () => {
                 iconName="ChevronLeft"
                 iconPosition="left"
               >
-                Previous
+                السابق
               </Button>
 
               <div className="flex items-center space-x-3">
                 {currentStep === steps.length ? (
                   <>
-                    <Button
-                      variant="outline"
-                      onClick={addToBatch}
-                      disabled={!isFormComplete() || isLoading}
-                      iconName="Plus"
-                    >
-                      Add to batch
-                    </Button>
-                    <Button
-                      variant="default"
-                      onClick={handlePublish}
-                      loading={isLoading}
-                      iconName="Send"
-                      iconPosition="left"
-                    >
-                      Publish Listing
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      onClick={publishBatch}
-                      disabled={(!(batch.length >= 2 || (batch.length >= 1 && isFormComplete())) ) || isLoading}
-                    >
-                      Publish Batch ({batch.length}{(batch.length >= 1 && isFormComplete()) ? '+' : ''})
-                    </Button>
-                    {/* show hint only when the draft will be auto-included (i.e. batch has at least 1 and draft is complete) and there are less than 2 queued items */}
-                    {batch.length >= 1 && isFormComplete() && batch.length < 2 && (
-                      <div className="text-xs text-muted-foreground mt-1">Current draft will be included in the batch</div>
+                    {editId ? (
+                      <Button
+                        variant="default"
+                        onClick={saveDraft}
+                        loading={isLoading}
+                        iconName="Edit"
+                        iconPosition="left"
+                      >
+                        حفظ التعديلات
+                      </Button>
+                    ) : (
+                      <>
+                        <Button
+                          variant="outline"
+                          onClick={addToBatch}
+                          disabled={!isFormComplete() || isLoading}
+                          iconName="Plus"
+                        >
+                          Add to batch
+                        </Button>
+                        <Button
+                          variant="default"
+                          onClick={handlePublish}
+                          loading={isLoading}
+                          iconName="Send"
+                          iconPosition="left"
+                        >
+                          Publish Listing
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={publishBatch}
+                          disabled={(!(batch.length >= 2 || (batch.length >= 1 && isFormComplete())) ) || isLoading}
+                        >
+                          Publish Batch ({batch.length}{(batch.length >= 1 && isFormComplete()) ? '+' : ''})
+                        </Button>
+                        {batch.length >= 1 && isFormComplete() && batch.length < 2 && (
+                          <div className="text-xs text-muted-foreground mt-1">Current draft will be included in the batch</div>
+                        )}
+                      </>
                     )}
                   </>
                 ) : (
@@ -599,7 +622,7 @@ const ProductListingCreation = () => {
                     iconName="ChevronRight"
                     iconPosition="right"
                   >
-                    Next
+                    التالي
                   </Button>
                 )}
               </div>
@@ -620,7 +643,6 @@ const ProductListingCreation = () => {
                 </div>
               </div>
             )}
-
 
           {/* Batch summary */}
           {batch.length > 0 && (
